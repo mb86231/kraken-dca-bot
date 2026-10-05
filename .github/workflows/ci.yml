@@ -96,7 +96,7 @@ jobs:
 
       - name: Check no internal facts leaked into the public tree
         run: |
-          leaks=$(grep -rInE 'example\.com|192\.168\.[13]\.' --exclude-dir=.git . || true)
+          leaks=$(grep -rInE 'beck\.lu|192\.168\.[13]\.' --exclude-dir=.git . || true)
           if [ -n "$leaks" ]; then
             echo "$leaks" | head -10 | sed 's/%/%25/g' | while IFS= read -r line; do
               echo "::error title=internal-fact leak::${line}"
