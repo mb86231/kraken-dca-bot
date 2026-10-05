@@ -54,23 +54,43 @@ jobs:
       - name: Scan for new secrets against baseline
         run: |
           pip install detect-secrets==1.5.0
-          cp .secrets.baseline /tmp/baseline.before
+          cp .secrets.baseline "$RUNNER_TEMP/baseline.before"
           detect-secrets scan --baseline .secrets.baseline --all-files
           python <<'EOF'
-          import json, sys
-          before = json.load(open("/tmp/baseline.before"))["results"]
-          after = json.load(open(".secrets.baseline"))["results"]
-          def norm(results):
-              return {
-                  (f.replace("\\", "/"), e["type"], e["hashed_secret"], e["line_number"])
-                  for f, entries in results.items() for e in entries
-              }
-          new = norm(after) - norm(before)
-          for item in sorted(new):
-              print("NEW potential secret:", item)
-          if new:
-              sys.exit(1)
-          print("no new secrets beyond baseline")
+          import json, sys, pathlib, traceback
+          try:
+              before = json.load(open(pathlib.Path(__import__("os").environ["RUNNER_TEMP"]) / "baseline.before"))["results"]
+              after = json.load(open(".secrets.baseline"))["results"]
+              def norm(results):
+                  return {
+                      (f.replace("\\", "/"), e["type"], e["hashed_secret"], e["line_number"])
+                      for f, entries in results.items() for e in entries
+                  }
+              new = norm(after) - norm(before)
+              missing = norm(before) - norm(after)
+              lines = ["### detect-secrets baseline check", ""]
+              if new:
+                  lines.append("**New potential secrets:**")
+                  lines += [f"- `{item}`" for item in sorted(new)]
+              if missing:
+                  lines.append("**Baseline entries not re-detected (stale or moved):**")
+                  lines += [f"- `{item}`" for item in sorted(missing)]
+              if not (new or missing):
+                  lines.append("Baseline matches scan — no new secrets.")
+              report = "\n".join(lines)
+              print(report)
+              summary = pathlib.Path(__import__("os").environ.get("GITHUB_STEP_SUMMARY", "/dev/null"))
+              with summary.open("a") as fh:
+                  fh.write(report + "\n")
+              for item in sorted(new):
+                  print(f"::error title=New potential secret::{item}")
+              sys.exit(1 if new else 0)
+          except SystemExit:
+              raise
+          except Exception:
+              msg = "secrets-check crashed:\\n" + traceback.format_exc().replace("\n", "\\n")
+              print(f"::error title=secrets-check error::{msg}")
+              raise
           EOF
 
       - name: Check no internal facts leaked into the public tree
