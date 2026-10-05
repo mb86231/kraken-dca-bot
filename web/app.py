@@ -380,10 +380,15 @@ def health_ready():
     else:
         checks["storage"] = "ok"
 
-    # Trading-loop heartbeat
+    # Trading-loop heartbeat. When the bot has no Kraken credentials the
+    # trading loop intentionally idles and writes no heartbeat — that is a
+    # valid first-run state, not a readiness failure.
+    credentials_configured = bool(getattr(config, "configured", True))
     heartbeat_age: int | None = None
     heartbeat_status = "missing"
-    if heartbeat_file.exists():
+    if not credentials_configured:
+        heartbeat_status = "not_required"
+    elif heartbeat_file.exists():
         data = safe_load_json(heartbeat_file)
         if isinstance(data, dict) and data.get("timestamp"):
             try:
@@ -408,6 +413,9 @@ def health_ready():
     if state is None:
         checks["bot_state"] = "missing"
         ready = False
+    elif not credentials_configured:
+        # Idle-unconfigured bots intentionally have no trading status yet.
+        checks["bot_state"] = "not_required"
     elif state.status in fatal_statuses:
         checks["bot_state"] = "fatal"
         ready = False

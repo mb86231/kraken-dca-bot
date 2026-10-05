@@ -102,6 +102,23 @@ def test_health_ready_without_heartbeat_is_not_ready(client: TestClient):
     assert data["checks"]["heartbeat"] == "missing"
 
 
+def test_health_ready_unconfigured_idle_bot_is_ready(client: TestClient):
+    """Fresh install without Kraken credentials: trading loop idles by design.
+
+    The missing heartbeat must not block readiness, so a brand-new container
+    comes up healthy instead of stuck at (unhealthy).
+    """
+    app.state.config.configured = False
+    try:
+        response = client.get("/health/ready")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ready"
+        assert data["checks"]["heartbeat"] == "not_required"
+    finally:
+        app.state.config.configured = True
+
+
 def test_health_ready_with_recent_heartbeat(client: TestClient, temp_dir: Path):
     _write_heartbeat(temp_dir, age_seconds=30)
     app.state.bot_state.status = "waiting"
