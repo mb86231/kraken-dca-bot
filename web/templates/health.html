@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}System Health — DCA-Bot{% endblock %}
+{% block page_title %}System Health{% endblock %}
+{% block content %}
+<div class="grid grid-3">
+  <div class="card stat-card">
+    <div class="stat-label">Bot Process</div>
+    <div class="stat-value" id="health-bot">—</div>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-label">Exchange API</div>
+    <div class="stat-value" id="health-exchange">—</div>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-label">Telegram</div>
+    <div class="stat-value" id="health-telegram">—</div>
+  </div>
+</div>
+<div class="card">
+  <h2>Details</h2>
+  <div id="health-details" class="status-row">Loading…</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  async function loadHealth() {
+    const data = await apiGet('/api/health');
+    document.getElementById('health-bot').innerHTML = `<span class="badge ${data.bot_process ? 'ok' : 'error'}">${data.bot_process ? 'Healthy' : 'Down'}</span>`;
+    document.getElementById('health-exchange').innerHTML = `<span class="badge ${data.exchange_api ? 'ok' : 'warn'}">${data.exchange_api ? 'Connected' : 'Disconnected'}</span>`;
+    document.getElementById('health-telegram').innerHTML = `<span class="badge ${data.telegram_api ? 'ok' : 'warn'}">${data.telegram_api ? 'Configured' : 'Not configured'}</span>`;
+    document.getElementById('health-details').innerHTML = `
+      <div>
+        <p><strong>Version:</strong> ${data.version}</p>
+        <p><strong>Runtime:</strong> ${data.runtime}</p>
+        <p><strong>Server Time:</strong> ${data.server_time}</p>
+        <p><strong>Last Price Update:</strong> ${data.last_price_update}</p>
+        <p><strong>Last Order:</strong> ${data.last_order}</p>
+      </div>
+    `;
+  }
+  loadHealth();
+  setInterval(loadHealth, 10000);
+</script>
+{% endblock %}

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Alerts — DCA-Bot{% endblock %}
+{% block page_title %}Alerts{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+    <h2>Active Alerts</h2>
+    <button class="btn btn-small btn-secondary" id="ack-all-btn" style="display:none;">Acknowledge All</button>
+  </div>
+  <div id="alerts-list" class="warning-list">
+    <li class="empty">Loading…</li>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  async function loadAlerts() {
+    const data = await apiGet('/api/alerts');
+    const list = document.getElementById('alerts-list');
+    const ackAllBtn = document.getElementById('ack-all-btn');
+    list.innerHTML = '';
+    if (!data.alerts || data.alerts.length === 0) {
+      list.innerHTML = '<li class="empty">No active alerts.</li>';
+      ackAllBtn.style.display = 'none';
+      return;
+    }
+    ackAllBtn.style.display = '';
+    data.alerts.forEach(a => {
+      const li = document.createElement('li');
+      li.style.display = 'flex';
+      li.style.justifyContent = 'space-between';
+      li.style.alignItems = 'center';
+      li.style.gap = '0.75rem';
+      li.innerHTML = `
+        <span><strong>${a.severity}</strong> ${a.message}</span>
+        <button class="btn btn-small btn-secondary ack-btn" data-id="${a.id}">Ack</button>
+      `;
+      list.appendChild(li);
+    });
+
+    document.querySelectorAll('.ack-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        try {
+          await apiPost(`/api/alerts/${id}/acknowledge`);
+          showToast('Alert acknowledged', 'success');
+          loadAlerts();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
+  }
+
+  document.getElementById('ack-all-btn').addEventListener('click', async () => {
+    if (!(await uiConfirm('Acknowledge all active alerts?', { title: 'Acknowledge all alerts', danger: false }))) return;
+    try {
+      const data = await apiPost('/api/alerts/acknowledge-all');
+      showToast(`Acknowledged ${data.acknowledged} alert(s).`, 'success');
+      loadAlerts();
+      loadStatus();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  loadAlerts();
+</script>
+{% endblock %}

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DCA-Bot — Login</title>
+  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}">
+</head>
+<body class="login-body">
+  <div class="login-card">
+    <div class="brand brand-large">
+      <span class="brand-mark">◈</span>
+      <span class="brand-name">DCA-Bot</span>
+    </div>
+    <h1>{% if setup_required %}First-run setup{% else %}Sign in{% endif %}</h1>
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+    {% if setup_required %}
+    <div class="alert alert-warning">
+      No admin account exists yet. Enter the <strong>setup token</strong> printed in the
+      container logs (<code>docker compose logs</code>) and choose your admin credentials.
+      This screen disappears once the account is created.
+    </div>
+    <form action="/setup" method="post" class="login-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token or request.cookies.get('dca_csrf', '') }}">
+      <label for="setup_token">Setup token</label>
+      <input type="text" id="setup_token" name="setup_token" required autofocus autocomplete="off" placeholder="From the container logs">
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" value="{{ setup_username or 'admin' }}" required autocomplete="username">
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" required autocomplete="new-password" minlength="8">
+      <label for="password_confirm">Confirm password</label>
+      <input type="password" id="password_confirm" name="password_confirm" required autocomplete="new-password" minlength="8">
+      <button type="submit" class="btn btn-primary btn-block">Create admin account</button>
+    </form>
+    {% else %}
+    {% if oidc_enabled %}
+    <a href="/login/oidc" class="btn btn-oidc btn-block">Sign in with Authentik</a>
+    <div class="login-divider"><span>or use local account</span></div>
+    {% endif %}
+    <form action="/login" method="post" class="login-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token or request.cookies.get('dca_csrf', '') }}">
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" required autofocus autocomplete="username">
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" required autocomplete="current-password">
+      <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+    </form>
+    {% endif %}
+    <p class="login-note">This dashboard controls a financial application. Keep your credentials secret.</p>
+  </div>
+  <script>
+    document.documentElement.setAttribute('data-theme',
+      matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  </script>
+</body>
+</html>

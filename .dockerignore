@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation (not needed at runtime)
+README.md
+INSTALL.md
+SECURITY.md
+share-dca-bot.md
+docs.html
+LICENSE
+
+# Secrets and local environment
+.env
+.env.*
+*.key
+*.pem
+*.secret
+
+# Runtime data (must be volume-mounted, not baked into image)
+transactions.json
+.health
+
+# Editor and OS files
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# CI/CD and ops scripts that belong on the host
+scripts/backup.sh
+scripts/rollback.sh

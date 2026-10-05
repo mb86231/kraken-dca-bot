@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Pytest
+        run: python -m pytest tests/ -q
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Audit dependencies for known vulnerabilities
+        run: pip-audit -r requirements.txt
+
+      - name: Scan for new secrets against baseline
+        run: |
+          pip install detect-secrets==1.5.0
+          cp .secrets.baseline /tmp/baseline.before
+          detect-secrets scan --baseline .secrets.baseline --all-files
+          python <<'EOF'
+          import json, sys
+          before = json.load(open("/tmp/baseline.before"))["results"]
+          after = json.load(open(".secrets.baseline"))["results"]
+          def norm(results):
+              return {
+                  (f, e["type"], e["hashed_secret"], e["line_number"])
+                  for f, entries in results.items() for e in entries
+              }
+          new = norm(after) - norm(before)
+          for item in sorted(new):
+              print("NEW potential secret:", item)
+          if new:
+              sys.exit(1)
+          print("no new secrets beyond baseline")
+          EOF
+
+      - name: Check no internal facts leaked into the public tree
+        run: |
+          if grep -rInE 'example\.com|192\.168\.[13]\.' --exclude-dir=.git .; then
+            echo "internal infrastructure facts leaked into the public tree" >&2
+            exit 1
+          fi
+          for p in .gitea compose.staging.yaml .env.staging.example \
+                    SHARING_CHECKLIST.md docs/staging-implementation-plan.md; do
+            if [ -e "$p" ]; then
+              echo "excluded path present in public tree: $p" >&2
+              exit 1
+            fi
+          done

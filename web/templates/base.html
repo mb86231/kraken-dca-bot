@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}DCA-Bot{% endblock %}</title>
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}">
+  <script src="/static/vendor/chart.js/chart.umd.min.js"></script>
+  <script src="/static/vendor/chart.js/chartjs-adapter-date-fns.bundle.min.js"></script>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">◈</span>
+        <span class="brand-name">DCA-Bot</span>
+      </div>
+      <nav class="nav">
+        <a href="/dashboard" class="nav-item {% if page == 'dashboard' %}active{% endif %}">Dashboard</a>
+        <a href="/performance" class="nav-item {% if page == 'performance' %}active{% endif %}">Performance</a>
+        <a href="/transactions" class="nav-item {% if page == 'transactions' %}active{% endif %}">Transactions</a>
+        <div class="nav-group {% if page in ('logs', 'alerts', 'audit', 'orders', 'backups') %}open{% endif %}" id="nav-system-group">
+          <button type="button" class="nav-group-toggle" id="nav-system-toggle" aria-expanded="{% if page in ('logs', 'alerts', 'audit', 'orders', 'backups') %}true{% else %}false{% endif %}">
+            <span>System</span>
+            <span class="nav-group-arrow">▸</span>
+          </button>
+          <div class="nav-group-items">
+            <a href="/logs" class="nav-item {% if page == 'logs' %}active{% endif %}">Logs</a>
+            <a href="/alerts" class="nav-item {% if page == 'alerts' %}active{% endif %}">Alerts</a>
+            <a href="/audit" class="nav-item {% if page == 'audit' %}active{% endif %}">Audit</a>
+            <a href="/orders" class="nav-item {% if page == 'orders' %}active{% endif %}">Orders</a>
+            <a href="/backups" class="nav-item {% if page == 'backups' %}active{% endif %}">Backups</a>
+          </div>
+        </div>
+        <a href="/preflight" class="nav-item {% if page == 'preflight' %}active{% endif %}">Preflight</a>
+        <div class="nav-spacer"></div>
+        <a href="/settings" class="nav-item {% if page == 'settings' %}active{% endif %}">Settings</a>
+      </nav>
+      <div class="sidebar-footer">
+        <form action="/logout" method="post" class="logout-form">
+          <button type="submit" class="btn btn-small btn-secondary">Logout {{ username }}</button>
+        </form>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">🌓</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <h1 class="page-title">{% block page_title %}Dashboard{% endblock %}</h1>
+        <div class="topbar-controls">
+          <button class="btn btn-small btn-primary" data-action="/api/bot/cycle" data-confirm="Trigger a one-time buy now? This will place an order according to your strategy.">Buy Now</button>
+          <button class="btn btn-small btn-secondary" id="pause-toggle-btn" data-action="/api/bot/pause">Pause</button>
+          <button class="btn btn-small btn-secondary" id="live-trading-toggle-btn" title="Toggle live trading">Live: …</button>
+        </div>
+        <div class="topbar-badges">
+          <span id="status-badge" class="badge">—</span>
+          <span id="exchange-status" class="badge">—</span>
+          <span id="telegram-status" class="badge">—</span>
+          <a href="/alerts" id="warning-badge" class="warning-badge" title="No warnings">
+            <span>⚠</span>
+          </a>
+          <div class="mode-banner" id="mode-banner">
+            <span class="mode-badge" id="mode-badge">Loading…</span>
+          </div>
+        </div>
+      </header>
+      <div class="content">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+
+  <div class="modal" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+    <div class="modal-backdrop" data-confirm-cancel></div>
+    <div class="modal-card confirm-card">
+      <div class="modal-header"><h2 id="confirm-modal-title">Please confirm</h2></div>
+      <p id="confirm-modal-message"></p>
+      <div class="confirm-actions">
+        <button type="button" class="btn btn-secondary" data-confirm-cancel>Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirm-modal-ok">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="/static/js/app.js?v={{ static_version }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

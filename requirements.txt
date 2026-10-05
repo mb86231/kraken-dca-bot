@@ -1,0 +1,29 @@
+# Web framework and server
+fastapi==0.142.2
+starlette==1.7.0
+uvicorn[standard]==0.30.1
+
+# Templating and forms
+jinja2==3.1.6
+python-multipart==0.0.32
+
+# Validation
+pydantic==2.13.5
+
+# Security: signed sessions, CSRF tokens, password hashing
+itsdangerous==2.2.0
+bcrypt==4.1.3
+
+# OIDC / SSO support
+httpx==0.28.1
+PyJWT[crypto]==2.15.1
+
+# Rate limiting
+slowapi==0.1.9
+
+# Timezone handling
+pytz==2024.1
+tzdata==2024.1
+
+# Cross-process file locking for JSON persistence
+filelock==3.32.0

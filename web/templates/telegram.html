@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Telegram — DCA-Bot{% endblock %}
+{% block page_title %}Telegram Configuration{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Telegram Settings</h2>
+  <p class="muted">Telegram credentials are configured via environment variables and are never stored in <code>config.json</code>. The values below are shown masked after saving.</p>
+  <form id="telegram-form" class="grid grid-2">
+    <div class="form-group">
+      <label for="bot_token">Bot Token</label>
+      <input type="password" id="bot_token" name="bot_token" placeholder="••••••••••">
+      <div class="form-hint">Leave blank to keep current token.</div>
+    </div>
+    <div class="form-group">
+      <label for="chat_id">Chat ID</label>
+      <input type="password" id="chat_id" name="chat_id" placeholder="••••••••">
+    </div>
+  </form>
+  <div class="button-row" style="margin-top: 1rem;">
+    <button class="btn btn-primary" id="save-telegram">Save</button>
+    <button class="btn btn-secondary" id="test-telegram">Send Test Message</button>
+  </div>
+  <div id="telegram-status" class="alert" style="display:none; margin-top: 1rem;"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.getElementById('save-telegram').addEventListener('click', async () => {
+    const payload = {
+      bot_token: document.getElementById('bot_token').value,
+      chat_id: document.getElementById('chat_id').value,
+    };
+    try {
+      const data = await apiPost('/api/telegram', payload);
+      showToast(data.message, 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.getElementById('test-telegram').addEventListener('click', async () => {
+    try {
+      const data = await apiPost('/api/telegram/test');
+      showToast(data.message, data.success ? 'success' : 'error');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+</script>
+{% endblock %}

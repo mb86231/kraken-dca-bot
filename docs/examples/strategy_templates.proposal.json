@@ -1,0 +1,168 @@
+[
+  {
+    "id": "default-fixed_interval",
+    "strategy_id": "fixed_interval",
+    "name": "Default Fixed Interval DCA",
+    "description": "Spread equal-sized buys evenly over the configured time horizon. Optionally buy extra dips when price falls below a threshold.",
+    "params": {
+      "mode": "recurring",
+      "deposit_day": 24,
+      "buy_hour": 8,
+      "dca_end_date": null,
+      "crypto_amount": 0.0001,
+      "dip_threshold_percent": 5.0,
+      "dip_buy_cooldown_hours": 2.0,
+      "max_price": null,
+      "max_monthly_amount": null
+    },
+    "version": "1.0.0",
+    "schema_version": 1,
+    "enabled": true,
+    "created_at": "",
+    "updated_at": ""
+  },
+  {
+    "id": "default-price_deviation",
+    "strategy_id": "price_deviation",
+    "name": "Default Price Deviation DCA",
+    "description": "Buy the base amount, then add safety orders at configured drawdown levels with increasing size.",
+    "params": {
+      "base_amount": 0.0001,
+      "levels": [
+        {
+          "drop_percent": 3.0,
+          "multiplier": 1.25
+        },
+        {
+          "drop_percent": 6.0,
+          "multiplier": 1.5
+        },
+        {
+          "drop_percent": 10.0,
+          "multiplier": 2.0
+        }
+      ],
+      "max_safety_orders": 10,
+      "cooldown_hours": 2.0,
+      "max_monthly_amount": null
+    },
+    "version": "1.0.0",
+    "schema_version": 1,
+    "enabled": true,
+    "created_at": "",
+    "updated_at": ""
+  },
+  {
+    "id": "default-volatility_adjusted",
+    "strategy_id": "volatility_adjusted",
+    "name": "Default Volatility-Adjusted DCA",
+    "description": "Reduce position size when volatility is elevated and increase it slightly when volatility is below a configured threshold.",
+    "params": {
+      "base_amount": 0.0001,
+      "atr_period": 14,
+      "min_multiplier": 0.5,
+      "max_multiplier": 1.5,
+      "low_volatility_threshold": 0.02,
+      "high_volatility_threshold": 0.05,
+      "schedule_hours": 24
+    },
+    "version": "1.0.0",
+    "schema_version": 1,
+    "enabled": true,
+    "created_at": "",
+    "updated_at": ""
+  },
+  {
+    "id": "default-moving_average",
+    "strategy_id": "moving_average",
+    "name": "Default Moving-Average DCA",
+    "description": "Buy more when price is below a moving average, less or none when price is significantly above it.",
+    "params": {
+      "base_amount": 0.0001,
+      "ma_type": "sma",
+      "ma_period": 50,
+      "schedule_hours": 24,
+      "below_multiplier": 1.5,
+      "above_multiplier": 0.5,
+      "deviation_threshold": 0.02
+    },
+    "version": "1.0.0",
+    "schema_version": 1,
+    "enabled": true,
+    "created_at": "",
+    "updated_at": ""
+  },
+  {
+    "id": "default-rsi_weighted",
+    "strategy_id": "rsi_weighted",
+    "name": "Default RSI-Weighted DCA",
+    "description": "Increase the purchase amount when RSI is oversold, reduce or skip when RSI is overbought.",
+    "params": {
+      "base_amount": 0.0001,
+      "rsi_period": 14,
+      "oversold": 30,
+      "neutral_low": 40,
+      "neutral_high": 70,
+      "overbought": 70,
+      "oversold_multiplier": 2.0,
+      "neutral_multiplier": 1.0,
+      "overbought_multiplier": 0.0,
+      "schedule_hours": 24
+    },
+    "version": "1.0.0",
+    "schema_version": 1,
+    "enabled": true,
+    "created_at": "",
+    "updated_at": ""
+  },
+  {
+    "id": "default-drawdown_based",
+    "strategy_id": "drawdown_based",
+    "name": "Default Drawdown-Based DCA",
+    "description": "Buy more as the price falls further from a recent high.",
+    "params": {
+      "base_amount": 0.0001,
+      "lookback_candles": 100,
+      "levels": [
+        {
+          "drawdown_percent": 5.0,
+          "multiplier": 1.25
+        },
+        {
+          "drawdown_percent": 10.0,
+          "multiplier": 1.75
+        },
+        {
+          "drawdown_percent": 20.0,
+          "multiplier": 2.5
+        }
+      ],
+      "max_purchases": 10,
+      "cooldown_hours": 6.0
+    },
+    "version": "1.0.0",
+    "schema_version": 1,
+    "enabled": true,
+    "created_at": "",
+    "updated_at": ""
+  },
+  {
+    "id": "default-budget_aware",
+    "strategy_id": "budget_aware",
+    "name": "Default Budget-Aware Adaptive DCA",
+    "description": "Track an unused period budget and distribute it dynamically across the remaining time, never exceeding the configured cap.",
+    "params": {
+      "period_budget": 1000.0,
+      "period_type": "monthly",
+      "base_frequency_hours": 24,
+      "reserve_percent": 20.0,
+      "max_single_purchase": 200.0,
+      "carry_over": true
+    },
+    "version": "1.0.0",
+    "schema_version": 1,
+    "enabled": true,
+    "created_at": "",
+    "updated_at": ""
+  }
+]

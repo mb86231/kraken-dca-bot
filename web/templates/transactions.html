@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Transactions — DCA-Bot{% endblock %}
+{% block page_title %}Transactions{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Filters</h2>
+  <div class="grid grid-4">
+    <div class="form-group">
+      <input type="text" id="search" placeholder="Search order ID, pair, strategy…">
+    </div>
+    <div class="form-group">
+      <input type="date" id="from-date">
+    </div>
+    <div class="form-group">
+      <input type="date" id="to-date">
+    </div>
+    <div class="form-group">
+      <select id="strategy">
+        <option value="">All strategies</option>
+        <option value="scheduled">Scheduled</option>
+        <option value="dip">Dip</option>
+        <option value="manual">Manual</option>
+      </select>
+    </div>
+  </div>
+  <div class="button-row">
+    <button class="btn btn-primary" id="apply-filters">Apply</button>
+    <a class="btn btn-secondary" href="/api/transactions/export?format=csv">Export CSV</a>
+    <a class="btn btn-secondary" href="/api/transactions/export?format=json">Export JSON</a>
+    <button class="btn btn-danger" id="delete-all">Delete All</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Pair</th>
+          <th>Amount</th>
+          <th>Price</th>
+          <th>Fee</th>
+          <th>Total</th>
+          <th>Strategy</th>
+          <th>Order ID</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="tx-body"></tbody>
+    </table>
+  </div>
+  <div class="pagination" id="pagination"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  let currentPage = 1;
+  async function loadTransactions(page = 1) {
+    currentPage = page;
+    const params = new URLSearchParams();
+    params.set('page', page);
+    params.set('per_page', '25');
+    const search = document.getElementById('search').value;
+    if (search) params.set('search', search);
+    if (document.getElementById('from-date').value) params.set('from_date', document.getElementById('from-date').value);
+    if (document.getElementById('to-date').value) params.set('to_date', document.getElementById('to-date').value);
+    if (document.getElementById('strategy').value) params.set('strategy', document.getElementById('strategy').value);
+
+    const data = await apiGet('/api/transactions?' + params.toString());
+    const tbody = document.getElementById('tx-body');
+    tbody.innerHTML = '';
+    if (!data.transactions.length) {
+      tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No transactions found.</td></tr>';
+    }
+    data.transactions.forEach(t => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${formatDatetime(t.date)}</td>
+        <td>${t.trading_pair}</td>
+        <td>${formatCrypto(t.amount)}</td>
+        <td>${formatCurrency(t.price)}</td>
+        <td>${formatCurrency(t.fee)}</td>
+        <td>${formatCurrency(t.total_cost)}</td>
+        <td><span class="badge ${t.strategy === 'dip' ? 'warn' : 'ok'}">${t.strategy}</span></td>
+        <td>${t.order_id}</td>
+        <td><span class="badge ${t.status === 'filled' ? 'ok' : 'error'}">${t.status}</span></td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    const pag = document.getElementById('pagination');
+    pag.innerHTML = '';
+    for (let i = 1; i <= data.pages; i++) {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-small ' + (i === page ? 'btn-primary' : 'btn-secondary');
+      btn.textContent = i;
+      btn.addEventListener('click', () => loadTransactions(i));
+      pag.appendChild(btn);
+    }
+  }
+
+  function formatDatetime(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleString();
+  }
+
+  document.getElementById('apply-filters').addEventListener('click', () => loadTransactions(1));
+
+  document.getElementById('delete-all').addEventListener('click', async () => {
+    if (!(await uiConfirm('Delete ALL transactions? This cannot be undone.', { title: 'Delete all transactions', confirmText: 'Delete all' }))) return;
+    try {
+      const data = await apiDelete('/api/transactions');
+      showToast(data.message, 'success');
+      loadTransactions(1);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  loadTransactions();
+</script>
+{% endblock %}

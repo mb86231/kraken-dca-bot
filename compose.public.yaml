@@ -1,0 +1,64 @@
+# Public quick-start compose file.
+# Runs the prebuilt image from GitHub Container Registry — no build needed.
+#
+#   docker compose -f compose.public.yaml up -d
+#
+# On first boot the container prints a one-time setup token in its logs
+# (docker compose logs dca-bot). Open http://localhost:8000, enter the token,
+# and create your admin account — no .env needed. Afterwards everything —
+# Kraken keys, Telegram, strategy — is configured in the dashboard UI.
+# Live trading stays OFF until you enable it in the dashboard.
+# (An optional .env can pre-seed credentials instead; see README → Quick Start.)
+
+name: kraken-dca-bot
+
+services:
+  dca-bot:
+    image: ghcr.io/mb86231/kraken-dca-bot:latest
+    container_name: kraken-dca-bot
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - TZ=Europe/Zurich
+      - APP_ENV=production
+      - CONFIG_PATH=/app/data/config.json
+      - WEB_UI_ENABLED=true
+      - WEB_UI_PORT=8000
+      # Quick start serves plain HTTP bound to localhost only. When exposing
+      # the dashboard beyond localhost, put it behind an HTTPS reverse proxy
+      # and set WEB_UI_SECURE_COOKIE=true.
+      - WEB_UI_SECURE_COOKIE=false
+    volumes:
+      - dca-bot-data:/app/data
+      - dca-bot-backups:/app/backups
+      - dca-bot-logs:/app/logs
+    ports:
+      # Loopback-only: the dashboard is reachable from this machine only.
+      # To expose it on your LAN or the internet, front it with an HTTPS
+      # reverse proxy instead of widening this binding.
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "/app/scripts/healthcheck.sh"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  dca-bot-data:
+  dca-bot-backups:
+  dca-bot-logs:

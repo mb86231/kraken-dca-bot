@@ -1,0 +1,20 @@
+{
+  "description": "Vendored Chart.js dependencies for the DCA-Bot dashboard.",
+  "verified_at": "2026-07-26",
+  "files": [
+    {
+      "filename": "chart.umd.min.js",
+      "library": "chart.js",
+      "version": "4.4.1",
+      "source": "https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js",
+      "sha256": "d2af8974e95271638772e9e9524db5b9a6f58d6ec2d5d781400447b4a31c681e"
+    },
+    {
+      "filename": "chartjs-adapter-date-fns.bundle.min.js",
+      "library": "chartjs-adapter-date-fns",
+      "version": "3.0.0",
+      "source": "https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js",
+      "sha256": "ea7ab30d26c38dcf1f2d26bb43e73a94537b58f1906f55e1a546dd09321b5615"
+    }
+  ]
+}
