@@ -62,7 +62,7 @@ jobs:
           after = json.load(open(".secrets.baseline"))["results"]
           def norm(results):
               return {
-                  (f, e["type"], e["hashed_secret"], e["line_number"])
+                  (f.replace("\\", "/"), e["type"], e["hashed_secret"], e["line_number"])
                   for f, entries in results.items() for e in entries
               }
           new = norm(after) - norm(before)
