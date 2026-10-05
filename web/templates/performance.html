@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% block title %}Performance — DCA-Bot{% endblock %}
+{% block page_title %}Performance{% endblock %}
+{% block content %}
+
+<!-- Summary KPIs -->
+<div class="grid grid-4" id="kpi-grid">
+  <div class="card stat-card">
+    <div class="stat-label">Total Invested</div>
+    <div class="stat-value" id="kpi-invested">—</div>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-label">Current Value</div>
+    <div class="stat-value" id="kpi-value">—</div>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-label">Unrealized P/L</div>
+    <div class="stat-value" id="kpi-pl">—</div>
+    <div class="muted" id="kpi-pl-pct"></div>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-label">Purchases</div>
+    <div class="stat-value" id="kpi-count">—</div>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-label">Avg Buy Price</div>
+    <div class="stat-value" id="kpi-avg">—</div>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-label">Market Price</div>
+    <div class="stat-value" id="kpi-market">—</div>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-label">Holdings</div>
+    <div class="stat-value" id="kpi-amount">—</div>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-label">First / Last Buy</div>
+    <div class="stat-value" style="font-size: 0.95rem;">
+      <span id="kpi-first">—</span><br><span id="kpi-last">—</span>
+    </div>
+  </div>
+</div>
+
+<!-- Chart controls -->
+<div class="card" style="margin-bottom: 1rem;">
+  <div class="status-row" style="border-bottom: none; padding: 0;">
+    <h2 style="margin: 0;">Charts</h2>
+    <div class="button-row">
+      <button class="btn btn-small btn-secondary range-btn active" data-range="all">All time</button>
+      <button class="btn btn-small btn-secondary range-btn" data-range="1y">1Y</button>
+      <button class="btn btn-small btn-secondary range-btn" data-range="90d">90D</button>
+      <button class="btn btn-small btn-secondary range-btn" data-range="30d">30D</button>
+      <button class="btn btn-small btn-secondary range-btn" data-range="7d">7D</button>
+    </div>
+  </div>
+</div>
+
+<!-- Charts -->
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Invested vs. Market Value</h2>
+    <canvas id="chart-invested"></canvas>
+  </div>
+  <div class="card">
+    <h2>Unrealized Profit / Loss</h2>
+    <canvas id="chart-pl"></canvas>
+  </div>
+</div>
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Average Buy Price vs. Market Price</h2>
+    <canvas id="chart-avg"></canvas>
+  </div>
+  <div class="card">
+    <h2>Cumulative Invested</h2>
+    <canvas id="chart-cumulative"></canvas>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  let currentRange = 'all';
+  const charts = {};
+
+  function formatCurrency(value, currency) {
+    return new Intl.NumberFormat('de-CH', { style: 'currency', currency: currency || 'CHF' }).format(value);
+  }
+
+  function formatCrypto(value) {
+    return value.toFixed(8);
+  }
+
+  function setKpi(id, value, options = {}) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (value === null || value === undefined || value === '') {
+      el.textContent = '—';
+      return;
+    }
+    if (options.currency) {
+      el.textContent = formatCurrency(value, options.currency);
+    } else if (options.crypto) {
+      el.textContent = formatCrypto(value);
+    } else {
+      el.textContent = value;
+    }
+    if (options.color) {
+      el.style.color = options.color;
+    }
+  }
+
+  async function loadKpis() {
+    const data = await apiGet('/api/performance');
+    const quote = data.quote_currency || 'CHF';
+    const asset = data.asset || 'BTC';
+    const plNegative = data.unrealized_pl < 0;
+
+    setKpi('kpi-invested', data.total_invested, { currency: quote });
+    setKpi('kpi-value', data.current_value, { currency: quote });
+    setKpi('kpi-pl', data.unrealized_pl, { currency: quote, color: plNegative ? 'var(--red)' : 'var(--green)' });
+    document.getElementById('kpi-pl-pct').textContent = data.total_invested
+      ? `${data.unrealized_pl_percent >= 0 ? '+' : ''}${data.unrealized_pl_percent}%`
+      : '';
+    document.getElementById('kpi-pl-pct').style.color = plNegative ? 'var(--red)' : 'var(--green)';
+    setKpi('kpi-count', data.purchase_count);
+    setKpi('kpi-avg', data.avg_buy_price, { currency: quote });
+    setKpi('kpi-market', data.current_price, { currency: quote });
+    setKpi('kpi-amount', data.total_amount, { crypto: true });
+    document.getElementById('kpi-first').textContent = data.first_purchase_at || '—';
+    document.getElementById('kpi-last').textContent = data.last_purchase_at || '—';
+  }
+
+  function chartColors(name) {
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#c97d0a';
+    const green = getComputedStyle(document.documentElement).getPropertyValue('--green').trim() || '#177a48';
+    const red = getComputedStyle(document.documentElement).getPropertyValue('--red').trim() || '#c43030';
+
+    if (name === 'pl_over_time') {
+      return { border: red, bg: 'rgba(196, 48, 48, 0.10)' };
+    }
+    if (name === 'invested_vs_value') {
+      return { border: [accent, green], bg: ['rgba(201, 125, 10, 0.10)', 'rgba(23, 122, 72, 0.10)'] };
+    }
+    if (name === 'avg_vs_market') {
+      return { border: [accent, '#3b82f6'], bg: ['rgba(201, 125, 10, 0.10)', 'rgba(59, 130, 246, 0.10)'] };
+    }
+    return { border: accent, bg: 'rgba(201, 125, 10, 0.10)' };
+  }
+
+  async function renderChart(canvasId, name) {
+    const data = await apiGet(`/api/charts/${name}?range=${currentRange}`);
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    const colors = chartColors(name);
+
+    if (charts[canvasId]) {
+      charts[canvasId].destroy();
+    }
+
+    charts[canvasId] = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: data.labels,
+        datasets: data.datasets.map((ds, i) => ({
+          label: ds.label,
+          data: ds.data,
+          borderColor: Array.isArray(colors.border) ? colors.border[i] : colors.border,
+          backgroundColor: Array.isArray(colors.bg) ? colors.bg[i] : colors.bg,
+          borderWidth: 2,
+          tension: 0.3,
+          fill: true,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+        })),
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: { position: 'bottom' },
+          tooltip: {
+            mode: 'index',
+            intersect: false,
+          },
+        },
+        scales: {
+          x: {
+            grid: { color: 'rgba(128,128,128,0.1)' },
+            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
+          },
+          y: {
+            grid: { color: 'rgba(128,128,128,0.1)' },
+          },
+        },
+        interaction: { mode: 'index', intersect: false },
+      },
+    });
+  }
+
+  async function renderAllCharts() {
+    await Promise.all([
+      renderChart('chart-invested', 'invested_vs_value'),
+      renderChart('chart-pl', 'pl_over_time'),
+      renderChart('chart-avg', 'avg_vs_market'),
+      renderChart('chart-cumulative', 'cumulative_invested'),
+    ]);
+  }
+
+  document.querySelectorAll('.range-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentRange = btn.dataset.range;
+      renderAllCharts();
+    });
+  });
+
+  (async () => {
+    await loadKpis();
+    await renderAllCharts();
+  })();
+</script>
+{% endblock %}

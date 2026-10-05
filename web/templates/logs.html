@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Logs — DCA-Bot{% endblock %}
+{% block page_title %}Logs{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Application Logs</h2>
+  <div class="grid grid-4">
+    <div class="form-group">
+      <select id="level">
+        <option value="">All levels</option>
+        <option value="debug">Debug</option>
+        <option value="info">Info</option>
+        <option value="warning">Warning</option>
+        <option value="error">Error</option>
+        <option value="critical">Critical</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <input type="text" id="search" placeholder="Search…">
+    </div>
+    <div class="form-group">
+      <input type="date" id="from-date">
+    </div>
+    <div class="form-group">
+      <input type="date" id="to-date">
+    </div>
+  </div>
+  <div class="button-row">
+    <button class="btn btn-primary" id="refresh-logs">Refresh</button>
+    <a class="btn btn-secondary" href="/api/logs/download">Download</a>
+    <button class="btn btn-secondary" id="archive-logs">Archive & Clear</button>
+  </div>
+  <div class="table-wrap" style="margin-top: 1rem;">
+    <table>
+      <thead>
+        <tr><th>Time</th><th>Level</th><th>Component</th><th>Message</th></tr>
+      </thead>
+      <tbody id="log-body"></tbody>
+    </table>
+  </div>
+  <div class="pagination" id="pagination"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  async function loadLogs(page = 1) {
+    const params = new URLSearchParams();
+    params.set('page', page);
+    params.set('per_page', '100');
+    const level = document.getElementById('level').value;
+    const search = document.getElementById('search').value;
+    if (level) params.set('level', level);
+    if (search) params.set('search', search);
+    if (document.getElementById('from-date').value) params.set('from_date', document.getElementById('from-date').value);
+    if (document.getElementById('to-date').value) params.set('to_date', document.getElementById('to-date').value);
+
+    const data = await apiGet('/api/logs?' + params.toString());
+    const tbody = document.getElementById('log-body');
+    tbody.innerHTML = '';
+    if (!data.logs.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No logs found.</td></tr>';
+    }
+    data.logs.forEach(l => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${l.timestamp || '—'}</td><td>${l.level || 'INFO'}</td><td>${l.component || 'bot'}</td><td>${l.message || ''}</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+  document.getElementById('refresh-logs').addEventListener('click', () => loadLogs(1));
+  document.getElementById('archive-logs').addEventListener('click', async () => {
+    if (!(await uiConfirm('Archive the current log file and clear it?', { title: 'Archive logs', confirmText: 'Archive' }))) return;
+    try {
+      const data = await apiPost('/api/logs/archive');
+      showToast(data.message || 'Logs archived.', 'success');
+      loadLogs(1);
+    } catch (err) {
+      showToast(err.message || 'Archive failed', 'error');
+    }
+  });
+  loadLogs();
+  setInterval(() => loadLogs(1), 10000);
+</script>
+{% endblock %}

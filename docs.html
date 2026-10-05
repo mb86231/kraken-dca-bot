@@ -1,0 +1,959 @@
+<title>Kraken DCA Bot — Documentation</title>
+<style>
+:root {
+  --bg: #F3F5F9;
+  --surface: #FFFFFF;
+  --surface-2: #ECEEF5;
+  --border: #D5D9EB;
+  --text: #101420;
+  --muted: #606888;
+  --accent: #C97D0A;
+  --accent-dim: rgba(201, 125, 10, 0.10);
+  --green: #177A48;
+  --red: #C43030;
+  --code-bg: #E8EBF6;
+  --font-mono: "SF Mono", ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0C0F18;
+    --surface: #131828;
+    --surface-2: #191E2E;
+    --border: #1D2540;
+    --text: #D8DEEE;
+    --muted: #7882A0;
+    --accent: #F7A21A;
+    --accent-dim: rgba(247, 162, 26, 0.11);
+    --green: #3ED68E;
+    --red: #F26060;
+    --code-bg: #0E1220;
+  }
+}
+
+:root[data-theme="light"] {
+  --bg: #F3F5F9;
+  --surface: #FFFFFF;
+  --surface-2: #ECEEF5;
+  --border: #D5D9EB;
+  --text: #101420;
+  --muted: #606888;
+  --accent: #C97D0A;
+  --accent-dim: rgba(201, 125, 10, 0.10);
+  --green: #177A48;
+  --red: #C43030;
+  --code-bg: #E8EBF6;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0C0F18;
+  --surface: #131828;
+  --surface-2: #191E2E;
+  --border: #1D2540;
+  --text: #D8DEEE;
+  --muted: #7882A0;
+  --accent: #F7A21A;
+  --accent-dim: rgba(247, 162, 26, 0.11);
+  --green: #3ED68E;
+  --red: #F26060;
+  --code-bg: #0E1220;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 16px; scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.container {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+/* Header */
+header {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  z-index: 20;
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 0;
+}
+
+.brand {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.brand em {
+  color: var(--accent);
+  font-style: normal;
+}
+
+.theme-btn {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.3rem 0.65rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.theme-btn:hover { border-color: var(--accent); color: var(--accent); }
+.theme-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Hero */
+.hero {
+  padding: 4rem 0 3.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 1.1rem;
+}
+
+.hero h1 {
+  font-family: var(--font-mono);
+  font-size: clamp(1.75rem, 5vw, 2.75rem);
+  font-weight: 600;
+  line-height: 1.15;
+  text-wrap: balance;
+  margin-bottom: 1.1rem;
+}
+
+.hero h1 .dim { color: var(--muted); font-weight: 400; }
+
+.hero-lead {
+  font-size: 1.05rem;
+  color: var(--muted);
+  max-width: 54ch;
+  line-height: 1.65;
+  margin-bottom: 2rem;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.badge {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  padding: 0.25rem 0.65rem;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.badge.green { border-color: var(--green); color: var(--green); }
+.badge.orange { border-color: var(--accent); color: var(--accent); }
+
+/* Sections */
+section {
+  padding: 3.25rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+section:last-of-type { border-bottom: none; }
+
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 1.5rem;
+}
+
+h2 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-wrap: balance;
+  margin-bottom: 0.9rem;
+  color: var(--text);
+}
+
+h3 {
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 2rem 0 0.6rem;
+}
+
+h3:first-of-type { margin-top: 0; }
+
+p { margin-bottom: 1rem; color: var(--muted); }
+p:last-child { margin-bottom: 0; }
+p strong { color: var(--text); font-weight: 600; }
+
+/* Mode cards */
+.modes-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1.75rem;
+}
+
+@media (max-width: 540px) { .modes-grid { grid-template-columns: 1fr; } }
+
+.mode-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1.4rem;
+}
+
+.mode-card.highlight {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.mode-tag {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+
+.mode-card.highlight .mode-tag { color: var(--accent); }
+
+.mode-title {
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.7rem;
+}
+
+.mode-card p {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  margin-bottom: 0;
+}
+
+/* Flow steps */
+.flow {
+  margin-top: 1.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.flow-step {
+  display: grid;
+  grid-template-columns: 3rem 1fr;
+  border-bottom: 1px solid var(--border);
+}
+
+.flow-step:last-child { border-bottom: none; }
+
+.flow-num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--surface-2);
+  border-right: 1px solid var(--border);
+  padding: 1rem 0;
+  letter-spacing: 0.02em;
+}
+
+.flow-body {
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+}
+
+.flow-body h4 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.2rem;
+}
+
+.flow-body p {
+  font-size: 0.85rem;
+  margin-bottom: 0;
+  line-height: 1.55;
+}
+
+/* Guards */
+.guards {
+  margin-top: 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.guard {
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.875rem;
+}
+
+.guard-idx {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+  flex-shrink: 0;
+  min-width: 1.5rem;
+}
+
+.guard-text { color: var(--text); line-height: 1.5; }
+
+.guard-text code {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  color: var(--accent);
+}
+
+/* Config table */
+.table-wrap {
+  overflow-x: auto;
+  margin-top: 1.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  min-width: 560px;
+}
+
+thead { background: var(--surface-2); }
+
+th {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+}
+
+td {
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--surface-2); }
+
+td:first-child {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.type-tag {
+  font-family: var(--font-mono);
+  font-size: 0.72em;
+  color: var(--green);
+  display: block;
+  margin-top: 0.15rem;
+}
+
+.req-tag {
+  font-family: var(--font-mono);
+  font-size: 0.7em;
+  color: var(--red);
+}
+
+.opt-tag {
+  font-family: var(--font-mono);
+  font-size: 0.7em;
+  color: var(--muted);
+}
+
+/* Req list */
+.req-block {
+  margin-top: 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.req-item {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr;
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.req-dash {
+  font-family: var(--font-mono);
+  color: var(--accent);
+  padding-top: 0.05rem;
+  font-size: 0.9rem;
+}
+
+.req-item h4 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.2rem;
+}
+
+.req-item p {
+  font-size: 0.875rem;
+  margin-bottom: 0;
+  line-height: 1.6;
+}
+
+/* Code block */
+.code-block {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 1.5rem 0;
+  overflow: hidden;
+}
+
+.code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.code-lang {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.code-block pre {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.65;
+  padding: 1.1rem 1.25rem;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.ck { color: var(--accent); }  /* key */
+.cv { color: var(--green); }   /* value */
+.cc { color: var(--muted); }   /* comment */
+
+/* Permissions table */
+.perm-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1.75rem;
+}
+
+@media (max-width: 540px) { .perm-grid { grid-template-columns: 1fr; } }
+
+.perm-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1.25rem;
+}
+
+.perm-card.allow { border-top: 2px solid var(--green); }
+.perm-card.deny  { border-top: 2px solid var(--red); }
+
+.perm-card h4 {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 0.9rem;
+}
+
+.perm-card.allow h4 { color: var(--green); }
+.perm-card.deny  h4 { color: var(--red); }
+
+.perm-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.perm-list li {
+  font-size: 0.875rem;
+  color: var(--text);
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.perm-list li::before {
+  font-family: var(--font-mono);
+  font-size: 0.7em;
+  flex-shrink: 0;
+}
+
+.perm-card.allow .perm-list li::before { content: "✓"; color: var(--green); }
+.perm-card.deny  .perm-list li::before { content: "✕"; color: var(--red); }
+
+/* Security cards */
+.sec-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1.75rem;
+}
+
+@media (max-width: 540px) { .sec-grid { grid-template-columns: 1fr; } }
+
+.sec-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1.25rem;
+}
+
+.sec-card h4 {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.9rem;
+}
+
+.sec-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.sec-list li {
+  font-size: 0.85rem;
+  color: var(--text);
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  line-height: 1.5;
+}
+
+.sec-list li::before {
+  content: "—";
+  font-family: var(--font-mono);
+  font-size: 0.75em;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* Footer */
+footer {
+  padding: 2.5rem 0;
+  text-align: center;
+}
+
+footer p {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+footer .accent { color: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+
+<header>
+  <div class="container">
+    <div class="header-inner">
+      <div class="brand"><em>Kraken</em> DCA Bot &nbsp;/&nbsp; Documentation</div>
+      <button class="theme-btn" onclick="
+        const t = document.documentElement;
+        const cur = t.getAttribute('data-theme');
+        if (cur === 'dark') t.setAttribute('data-theme','light');
+        else if (cur === 'light') t.setAttribute('data-theme','dark');
+        else t.setAttribute('data-theme', matchMedia('(prefers-color-scheme:dark)').matches ? 'light' : 'dark');
+      ">toggle theme</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+
+    <div class="hero">
+      <div class="eyebrow">Built by Pascal Briner</div>
+      <h1>Automated Bitcoin DCA<br><span class="dim">on Kraken Exchange</span></h1>
+      <p class="hero-lead">A self-hosted bot that buys Bitcoin automatically — spreading purchases across a cycle, triggering extra buys on dips, and respecting price and spend limits you control.</p>
+      <div class="badges">
+        <span class="badge green">Zero third-party dependencies</span>
+        <span class="badge green">Docker + Docker Compose</span>
+        <span class="badge green">Persistent transaction log</span>
+        <span class="badge orange">Real money — test first</span>
+      </div>
+    </div>
+
+    <!-- Strategy -->
+    <section id="strategy">
+      <div class="section-label">Strategy</div>
+      <h2>How DCA works, and why</h2>
+      <p>Dollar Cost Averaging removes the need to time the market. Instead of buying a large amount at once, you buy a fixed amount at regular intervals. Over time this averages out the purchase price — buying more when prices are low, less when they're high.</p>
+      <p>This bot takes that further: it spreads buys <strong>evenly within a cycle</strong> so your available balance is deployed gradually, not in one hit. It also watches for significant price dips and buys opportunistically when they occur.</p>
+
+      <div class="modes-grid">
+        <div class="mode-card highlight">
+          <div class="mode-tag">Mode 1 &nbsp;·&nbsp; Active</div>
+          <div class="mode-title">Recurring</div>
+          <p>You deposit fiat on the same day each month. The bot spreads buys evenly from one deposit day to the next, restarting the cycle automatically. Use this for ongoing monthly DCA.</p>
+        </div>
+        <div class="mode-card">
+          <div class="mode-tag">Mode 2</div>
+          <div class="mode-title">Lump Sum</div>
+          <p>You deposit a fixed chunk once and set an end date. The bot spreads buys evenly until that date. Use this when you want to DCA a specific amount over a defined bear-market window.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section id="how-it-works">
+      <div class="section-label">How it works</div>
+      <h2>The buy loop</h2>
+      <p>On startup the bot executes an immediate buy, then enters a continuous polling loop. Every <strong>poll interval</strong> (default 5 minutes) it checks the current price and decides whether to act.</p>
+
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-num">01</div>
+          <div class="flow-body">
+            <h4>Calculate schedule</h4>
+            <p>Reads available fiat balance and current price. Divides remaining hours in the cycle by the number of affordable buys to get the interval between buys.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">02</div>
+          <div class="flow-body">
+            <h4>Wait for next buy time</h4>
+            <p>Sleeps until the next scheduled buy, waking every poll interval to check price and detect dips.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">03</div>
+          <div class="flow-body">
+            <h4>Dip detection</h4>
+            <p>If the current price drops below the last buy price by the configured threshold (e.g. 5%), an extra buy fires immediately, subject to the cooldown window.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">04</div>
+          <div class="flow-body">
+            <h4>Deposit detection</h4>
+            <p>If the fiat balance increases between polls (a new deposit arrived), the schedule is recalculated automatically.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">05</div>
+          <div class="flow-body">
+            <h4>Execute and record</h4>
+            <p>Places a market buy order on Kraken for the configured crypto amount, then appends the trade to <code style="font-family:var(--font-mono);font-size:0.85em;color:var(--accent)">transactions.json</code> and prints a portfolio summary.</p>
+          </div>
+        </div>
+      </div>
+
+      <h3>Buy guards</h3>
+      <p>Before every buy — scheduled or dip — these checks run in order. Any failure skips the buy with a warning.</p>
+
+      <div class="guards">
+        <div class="guard">
+          <span class="guard-idx">1</span>
+          <span class="guard-text">In lump sum mode: if today is past <code>dca_end_date</code>, buying stops permanently.</span>
+        </div>
+        <div class="guard">
+          <span class="guard-idx">2</span>
+          <span class="guard-text">If current price exceeds <code>max_price</code>, the buy is skipped. Avoids buying at all-time highs.</span>
+        </div>
+        <div class="guard">
+          <span class="guard-idx">3</span>
+          <span class="guard-text">If this buy would push the cycle's total spend past <code>max_monthly_amount</code>, the buy is skipped.</span>
+        </div>
+        <div class="guard">
+          <span class="guard-idx">4</span>
+          <span class="guard-text">If fiat balance is insufficient for the order, the buy is skipped.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Configuration -->
+    <section id="configuration">
+      <div class="section-label">Configuration</div>
+      <h2>config.json reference</h2>
+      <p>All settings live in <code style="font-family:var(--font-mono);font-size:0.85em;color:var(--accent)">config.json</code>. API credentials must <strong>not</strong> be placed here — pass them as environment variables <code style="font-family:var(--font-mono);font-size:0.85em;color:var(--accent)">KRAKEN_API_KEY</code> and <code style="font-family:var(--font-mono);font-size:0.85em;color:var(--accent)">KRAKEN_API_SECRET</code> via a <code style="font-family:var(--font-mono);font-size:0.85em;color:var(--accent)">.env</code> file that is never committed.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Type</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>mode</td>
+              <td><span class="type-tag">string</span></td>
+              <td><code style="font-family:var(--font-mono);font-size:0.85em;color:var(--green)">"recurring"</code> or <code style="font-family:var(--font-mono);font-size:0.85em;color:var(--green)">"lump_sum"</code>. Selects the DCA strategy.</td>
+            </tr>
+            <tr>
+              <td>trading_pair</td>
+              <td><span class="type-tag">string</span></td>
+              <td>Kraken asset pair. e.g. <code style="font-family:var(--font-mono);font-size:0.85em;color:var(--green)">"XBTCHF"</code> for BTC/CHF. Must match Kraken's exact internal naming.</td>
+            </tr>
+            <tr>
+              <td>deposit_day</td>
+              <td><span class="type-tag">int 1–28</span></td>
+              <td>Day of month the cycle resets. The scheduled buy fires at <code style="font-family:var(--font-mono);font-size:0.85em;color:var(--accent)">buy_hour</code> on this day. Defines the monthly spend period boundary. Unused in lump_sum mode.</td>
+            </tr>
+            <tr>
+              <td>buy_hour</td>
+              <td><span class="type-tag">int 0–23</span></td>
+              <td>Hour of day the scheduled buy executes.</td>
+            </tr>
+            <tr>
+              <td>crypto_amount</td>
+              <td><span class="type-tag">float &gt; 0</span></td>
+              <td>BTC to buy per order. Kraken's minimum is <strong style="color:var(--text)">0.0001 BTC</strong>. Every scheduled and dip buy uses this amount.</td>
+            </tr>
+            <tr>
+              <td>dip_threshold_percent</td>
+              <td><span class="type-tag">float 0–100</span></td>
+              <td>% drop below the last buy price that triggers an extra dip buy. e.g. <code style="font-family:var(--font-mono);font-size:0.85em;color:var(--green)">5.0</code> means a 5% drop.</td>
+            </tr>
+            <tr>
+              <td>dip_buy_cooldown_hours</td>
+              <td><span class="type-tag">float ≥ 0</span></td>
+              <td>Minimum hours between two consecutive dip buys. Prevents over-buying during a prolonged crash.</td>
+            </tr>
+            <tr>
+              <td>poll_interval_seconds</td>
+              <td><span class="type-tag">int ≥ 60</span></td>
+              <td>How often the bot checks price and conditions. Lower values catch dips faster but increase API calls.</td>
+            </tr>
+            <tr>
+              <td>max_price</td>
+              <td><span class="type-tag">float or null</span></td>
+              <td>Skip any buy if current price is above this value. Avoids buying at elevated levels. <span class="opt-tag">Optional — null to disable.</span></td>
+            </tr>
+            <tr>
+              <td>max_monthly_amount</td>
+              <td><span class="type-tag">float or null</span></td>
+              <td>Maximum fiat to spend per cycle (deposit day to deposit day). A buy that would exceed the limit is skipped. <span class="opt-tag">Optional — null to disable.</span></td>
+            </tr>
+            <tr>
+              <td>dca_end_date</td>
+              <td><span class="type-tag">date or null</span></td>
+              <td>ISO date string e.g. <code style="font-family:var(--font-mono);font-size:0.85em;color:var(--green)">"2027-06-01"</code>. Required in lump_sum mode — buying stops after this date. Must be in the future.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">config.json — recurring mode</span>
+        </div>
+        <pre>{
+  <span class="ck">"mode"</span>:                    <span class="cv">"recurring"</span>,
+  <span class="ck">"trading_pair"</span>:            <span class="cv">"XBTCHF"</span>,
+  <span class="ck">"deposit_day"</span>:             <span class="cv">24</span>,
+  <span class="ck">"buy_hour"</span>:                <span class="cv">8</span>,
+  <span class="ck">"crypto_amount"</span>:           <span class="cv">0.0001</span>,
+  <span class="ck">"dip_threshold_percent"</span>:   <span class="cv">5.0</span>,
+  <span class="ck">"dip_buy_cooldown_hours"</span>:  <span class="cv">2.0</span>,
+  <span class="ck">"poll_interval_seconds"</span>:   <span class="cv">300</span>,
+  <span class="ck">"max_price"</span>:               <span class="cv">65000</span>,
+  <span class="ck">"max_monthly_amount"</span>:       <span class="cv">1000</span>
+}</pre>
+      </div>
+    </section>
+
+    <!-- Requirements -->
+    <section id="requirements">
+      <div class="section-label">Requirements</div>
+      <h2>What you need to run it</h2>
+
+      <div class="req-block">
+        <div class="req-item">
+          <span class="req-dash">—</span>
+          <div>
+            <h4>Docker &amp; Docker Compose</h4>
+            <p>The bot runs as a hardened Docker container. Docker 20.10+ and Docker Compose 1.29+ are required. No other runtime dependencies — the bot uses Python's standard library only.</p>
+          </div>
+        </div>
+        <div class="req-item">
+          <span class="req-dash">—</span>
+          <div>
+            <h4>A funded Kraken account</h4>
+            <p>Deposit fiat (CHF, EUR, USD…) via bank transfer before starting the bot. The bot reads the balance on startup and after every poll tick — it won't buy if the balance is zero.</p>
+          </div>
+        </div>
+        <div class="req-item">
+          <span class="req-dash">—</span>
+          <div>
+            <h4>A Kraken API key</h4>
+            <p>Create a key under <strong>Account → Security → API → Create API key</strong>. Name it (e.g. <code style="font-family:var(--font-mono);font-size:0.85em;color:var(--accent)">dca-bot</code>), enable only the two permissions below, and optionally restrict to the server's IP address. Kraken shows the secret only once — copy it immediately.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="perm-grid">
+        <div class="perm-card allow">
+          <h4>Enable</h4>
+          <ul class="perm-list">
+            <li>Query Funds — read fiat and crypto balances</li>
+            <li>Create &amp; Modify Orders — place market buys</li>
+          </ul>
+        </div>
+        <div class="perm-card deny">
+          <h4>Never enable</h4>
+          <ul class="perm-list">
+            <li>Withdraw Funds — would allow draining the account if the key leaks</li>
+            <li>Any admin or transfer permissions</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Deploy</h3>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">shell</span></div>
+        <pre><span class="cc"># One-time setup</span>
+cp main.py config.json Dockerfile docker-compose.yml /your/production/path/
+echo "KRAKEN_API_KEY=your_key"     >> .env
+echo "KRAKEN_API_SECRET=your_secret" >> .env
+touch transactions.json
+
+<span class="cc"># Start</span>
+docker compose up -d --build
+
+<span class="cc"># Watch logs</span>
+docker compose logs -f
+
+<span class="cc"># Update (transactions.json is never touched)</span>
+cp main.py config.json /your/production/path/
+docker compose up -d --build</pre>
+      </div>
+    </section>
+
+    <!-- Security -->
+    <section id="security">
+      <div class="section-label">Security</div>
+      <h2>How the bot is hardened</h2>
+      <p>The attack surface is minimal by design. No web server, no remote access, no third-party packages, no shell calls. The only outbound communication is HTTPS to Kraken's API.</p>
+
+      <div class="sec-grid">
+        <div class="sec-card">
+          <h4>Credentials</h4>
+          <ul class="sec-list">
+            <li>API keys come exclusively from environment variables, never from config.json</li>
+            <li>The .env file lives only on the production host and is never committed to git</li>
+            <li>Keys are never logged or printed at any point</li>
+          </ul>
+        </div>
+        <div class="sec-card">
+          <h4>Docker container</h4>
+          <ul class="sec-list">
+            <li>Runs as non-root user <code style="font-family:var(--font-mono);font-size:0.85em;color:var(--accent)">krakenuser</code> (UID 1000)</li>
+            <li>All Linux capabilities dropped (<code style="font-family:var(--font-mono);font-size:0.85em;color:var(--accent)">cap_drop: ALL</code>)</li>
+            <li>No privilege escalation (<code style="font-family:var(--font-mono);font-size:0.85em;color:var(--accent)">no-new-privileges: true</code>)</li>
+          </ul>
+        </div>
+        <div class="sec-card">
+          <h4>Application</h4>
+          <ul class="sec-list">
+            <li>Zero third-party packages — stdlib only (urllib, hmac, hashlib, json)</li>
+            <li>No eval, no pickle, no subprocess calls</li>
+            <li>All config values validated on startup — fails fast with a clear error</li>
+          </ul>
+        </div>
+        <div class="sec-card">
+          <h4>Data</h4>
+          <ul class="sec-list">
+            <li>config.json and transactions.json are volume-mounted — never baked into the image</li>
+            <li>Rebuilding the image never touches transaction history</li>
+            <li>No database — plain JSON, no injection surface</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="code-block" style="margin-top:1.75rem">
+        <div class="code-header"><span class="code-lang">docker-compose.yml — security options</span></div>
+        <pre>security_opt:
+  - no-new-privileges:true
+cap_drop:
+  - ALL
+restart: unless-stopped
+volumes:
+  - ./config.json:/app/config.json
+  - ./transactions.json:/app/transactions.json</pre>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer>
+  <div class="container">
+    <p>Built by <span class="accent">Pascal Briner</span> &nbsp;·&nbsp; Use at your own risk &nbsp;·&nbsp; Not financial advice</p>
+  </div>
+</footer>

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Backups — DCA-Bot{% endblock %}
+{% block page_title %}Backup & Data Management{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Backups</h2>
+  <p class="muted">Backups include <code>config.json</code> and <code>transactions.json</code>. Secrets are excluded.</p>
+  <div class="button-row">
+    <button class="btn btn-primary" data-action="/api/backups/create">Create Backup</button>
+  </div>
+  <div class="table-wrap" style="margin-top: 1rem;">
+    <table>
+      <thead>
+        <tr><th>Backup</th><th>Size</th><th>Created</th></tr>
+      </thead>
+      <tbody id="backup-body"></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  async function loadBackups() {
+    const data = await apiGet('/api/backups');
+    const tbody = document.getElementById('backup-body');
+    tbody.innerHTML = '';
+    if (!data.backups || data.backups.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="3" class="empty-state">No backups found.</td></tr>';
+      return;
+    }
+    data.backups.forEach(b => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${b.name}</td><td>${b.size}</td><td>${b.created}</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+  loadBackups();
+</script>
+{% endblock %}

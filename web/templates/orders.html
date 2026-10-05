@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Order Attempts — DCA-Bot{% endblock %}
+{% block page_title %}Order Attempts{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Live Order Attempts</h2>
+  <p class="muted">
+    Each row is one attempted buy. Non-terminal states may require operator action.
+  </p>
+  <ul class="muted">
+    <li><strong>HOLD</strong> — the attempt was blocked for safety (e.g. insufficient balance, APP_ENV, or missing config).<br>
+        <em>Acknowledge</em> marks it as reviewed and lets the bot place new orders. It does <strong>not</strong> retry the failed attempt itself. Use <em>Cancel</em> to abandon it.</li>
+    <li><strong>UNKNOWN</strong> — the bot could not confirm whether the order reached Kraken.<br>
+        <em>Confirm</em> records it as filled, <em>Retry</em> submits it again, <em>Cancel</em> abandons it.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+    <h2>History</h2>
+    <div>
+      <label for="order-filter" class="muted">Filter:</label>
+      <select id="order-filter" class="form-control" style="display:inline; width:auto;">
+        <option value="">All</option>
+        <option value="CONFIRMED">Confirmed</option>
+        <option value="SUBMITTED">Submitted</option>
+        <option value="RETRY_SCHEDULED">Retry Scheduled</option>
+        <option value="UNKNOWN">Unknown</option>
+        <option value="HOLD">Hold</option>
+        <option value="FAILED_PERMANENT">Failed Permanent</option>
+      </select>
+    </div>
+  </div>
+  <table class="data-table" id="orders-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Strategy</th>
+        <th>Amount</th>
+        <th>Price</th>
+        <th>State</th>
+        <th>Attempt</th>
+        <th>Next Retry</th>
+        <th>Outcome / Reason</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td colspan="9" class="empty">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  async function loadOrders() {
+    const filter = document.getElementById('order-filter').value;
+    const url = filter ? `/api/orders?state=${encodeURIComponent(filter)}` : '/api/orders';
+    const res = await fetch(url);
+    const data = await res.json();
+    const tbody = document.querySelector('#orders-table tbody');
+    if (!data.orders || data.orders.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" class="empty">No order attempts found.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.orders.slice().reverse().map(o => `
+      <tr>
+        <td>${new Date(o.created_at).toLocaleString()}</td>
+        <td>${o.strategy}</td>
+        <td>${Number(o.amount).toFixed(8)}</td>
+        <td>${Number(o.price).toFixed(2)}</td>
+        <td><span class="badge ${o.state.toLowerCase()}">${o.state}</span></td>
+        <td>${o.attempt_number}</td>
+        <td>${o.next_retry_at ? new Date(o.next_retry_at).toLocaleString() : '—'}</td>
+        <td>${o.final_outcome || o.error_message || '—'}</td>
+        <td>
+          ${o.state === 'HOLD'
+            ? `<div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                 <button class="btn btn-small btn-secondary" data-order-action="acknowledge" data-order-id="${o.attempt_id}" title="Mark as reviewed; allows new orders but does not retry this attempt">Acknowledge</button>
+                 <button class="btn btn-small btn-danger" data-order-action="cancel" data-order-id="${o.attempt_id}">Cancel</button>
+               </div>`
+            : o.state === 'UNKNOWN'
+            ? `<div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                 <button class="btn btn-small btn-success" data-order-action="confirm" data-order-id="${o.attempt_id}" title="Order reached Kraken; record it as confirmed">Confirm</button>
+                 <button class="btn btn-small btn-secondary" data-order-action="retry" data-order-id="${o.attempt_id}">Retry</button>
+                 <button class="btn btn-small btn-danger" data-order-action="cancel" data-order-id="${o.attempt_id}">Cancel</button>
+               </div>`
+            : '—'}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  document.getElementById('order-filter').addEventListener('change', loadOrders);
+  document.addEventListener('DOMContentLoaded', loadOrders);
+
+  document.getElementById('orders-table').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-order-action]');
+    if (!btn) return;
+    const attemptId = btn.dataset.orderId;
+    const action = btn.dataset.orderAction;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      if (action === 'acknowledge') {
+        await apiPost(`/api/orders/${attemptId}/acknowledge`);
+        showToast('Order acknowledged. New orders can now proceed.', 'success');
+      } else if (action === 'cancel') {
+        await apiPost(`/api/orders/${attemptId}/cancel`);
+        showToast('Order cancelled.', 'success');
+      } else if (action === 'confirm' || action === 'retry') {
+        await apiPost(`/api/orders/${attemptId}/resolve`, { action });
+        showToast(`Order ${action === 'confirm' ? 'confirmed' : 'retry scheduled'}.`, 'success');
+      }
+      loadOrders();
+    } catch (err) {
+      showToast(err.message, 'error');
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  });
+</script>
+{% endblock %}

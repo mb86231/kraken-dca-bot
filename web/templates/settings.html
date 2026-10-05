@@ -1,0 +1,749 @@
+{% extends "base.html" %}
+{% block title %}Settings — DCA-Bot{% endblock %}
+{% block page_title %}Settings{% endblock %}
+{% block content %}
+
+<div class="settings-tabs">
+  <button type="button" class="settings-tab active" data-tab="strategy">Strategy</button>
+  <button type="button" class="settings-tab" data-tab="preflight">Preflight</button>
+  <button type="button" class="settings-tab" data-tab="api-keys">API Keys</button>
+  <button type="button" class="settings-tab" data-tab="auth">Authentication</button>
+</div>
+
+<div id="tab-strategy">
+
+<!-- Strategy Settings -->
+<div class="card">
+  <h2>Strategy</h2>
+  <form id="settings-form" class="grid grid-2">
+    <div class="form-group">
+      <label for="trading_pair">Trading Pair</label>
+      <input type="text" id="trading_pair" name="trading_pair">
+      <div class="form-hint">Kraken pair, e.g. XBTCHF</div>
+    </div>
+    <div class="form-group">
+      <label for="mode">Mode</label>
+      <select id="mode" name="mode">
+        <option value="recurring">Recurring</option>
+        <option value="lump_sum">Lump Sum</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="deposit_day">Deposit Day</label>
+      <input type="number" id="deposit_day" name="deposit_day" min="1" max="28">
+    </div>
+    <div class="form-group">
+      <label for="buy_hour">Buy Hour (Europe/Zurich)</label>
+      <input type="number" id="buy_hour" name="buy_hour" min="0" max="23">
+    </div>
+    <div class="form-group">
+      <label for="crypto_amount">Base Crypto Amount per Buy</label>
+      <input type="number" step="0.00000001" id="crypto_amount" name="crypto_amount">
+      <div class="form-hint">Used when dynamic DCA is off, and as the base/flat tier when on.</div>
+    </div>
+    <div class="form-group">
+      <label for="dip_threshold_percent">Dip Threshold (%)</label>
+      <input type="number" step="0.1" id="dip_threshold_percent" name="dip_threshold_percent">
+      <div class="form-hint">Only used when dynamic DCA is disabled.</div>
+    </div>
+    <div class="form-group">
+      <label for="dip_buy_cooldown_hours">Dip Cooldown (hours)</label>
+      <input type="number" step="0.1" id="dip_buy_cooldown_hours" name="dip_buy_cooldown_hours">
+      <div class="form-hint">Only used when dynamic DCA is disabled.</div>
+    </div>
+    <div class="form-group">
+      <label for="poll_interval_seconds">Poll Interval (seconds, ≥60)</label>
+      <input type="number" id="poll_interval_seconds" name="poll_interval_seconds" min="60">
+    </div>
+    <div class="form-group">
+      <label for="max_price">Max Price (0 to disable)</label>
+      <input type="number" step="0.01" id="max_price" name="max_price">
+    </div>
+    <div class="form-group">
+      <label for="max_monthly_amount">Max Monthly Amount (0 to disable)</label>
+      <input type="number" step="0.01" id="max_monthly_amount" name="max_monthly_amount">
+    </div>
+    <div class="form-group">
+      <label for="dca_end_date">DCA End Date (lump_sum only)</label>
+      <input type="date" id="dca_end_date" name="dca_end_date">
+    </div>
+  </form>
+</div>
+
+<!-- Dynamic DCA -->
+<div class="card" style="margin-top: 1rem;">
+  <h2>Dynamic DCA</h2>
+  <p class="muted">When enabled, the bot adjusts the buy size based on price change vs. the last buy (or average buy). The legacy dip buy is disabled.</p>
+  <form id="dynamic-dca-form">
+    <div class="grid grid-3" style="margin-bottom: 1rem;">
+      <div class="form-group">
+        <label for="dynamic_dca_enabled">Enable Dynamic DCA</label>
+        <input type="checkbox" id="dynamic_dca_enabled" name="dynamic_dca_enabled">
+      </div>
+      <div class="form-group">
+        <label for="dynamic_dca_reference">Reference Price</label>
+        <select id="dynamic_dca_reference" name="dynamic_dca_reference">
+          <option value="last_buy">Last Buy</option>
+          <option value="avg_buy">Average Buy</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="dynamic_dca_cooldown_hours">Cooldown (hours)</label>
+        <input type="number" step="0.1" id="dynamic_dca_cooldown_hours" name="dynamic_dca_cooldown_hours" min="0">
+        <div class="form-hint">Recommended: 24 h or more. Use 0.1–1 h for testing.</div>
+      </div>
+    </div>
+    <h3 style="font-size: 0.95rem; margin-bottom: 0.5rem;">Tiers</h3>
+    <p class="muted" style="font-size: 0.85rem; margin-bottom: 0.5rem;">
+      Matched from top to bottom. <code>amount = 0</code> means skip the buy. Amounts are in the base crypto asset (e.g. BTC).
+    </p>
+    <div class="table-wrap">
+      <table id="dynamic-dca-tiers">
+        <thead>
+          <tr>
+            <th>Threshold (%)</th>
+            <th>Amount</th>
+            <th>Enabled</th>
+            <th>Example</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Rows generated by JS -->
+        </tbody>
+      </table>
+    </div>
+    <div class="button-row" style="margin-top: 0.75rem;">
+      <button type="button" class="btn btn-small btn-secondary" id="add-tier">+ Add Tier</button>
+      <button type="button" class="btn btn-small btn-secondary" id="reset-tiers">Reset to Defaults</button>
+    </div>
+  </form>
+</div>
+
+<!-- Global actions -->
+<div class="card" style="margin-top: 1rem;">
+  <h2>Save & Apply</h2>
+  <p class="muted">The button below saves the strategy settings and the dynamic DCA settings above.</p>
+  <div class="button-row">
+    <button class="btn btn-primary" id="save-settings">Save All Settings</button>
+    <button class="btn btn-secondary" id="restore-settings">Restore Previous</button>
+    <button class="btn btn-secondary" id="show-runtime-config">Show current server config</button>
+    <button class="btn btn-danger" id="restart-bot">Restart Bot</button>
+  </div>
+  <div id="settings-message" class="alert" style="display:none; margin-top: 1rem;"></div>
+</div>
+
+<div id="runtime-config-modal" class="modal" style="display:none;">
+  <div class="modal-backdrop"></div>
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2>Current Server Config</h2>
+      <button class="btn btn-small" id="close-runtime-config">Close</button>
+    </div>
+    <p class="muted">This is the configuration currently loaded by the bot process. Sensitive values are masked.</p>
+    <pre id="runtime-config-content" class="code-block">Loading…</pre>
+  </div>
+</div>
+
+<!-- System Health -->
+<div class="card" style="margin-top: 1rem;">
+  <h2>System Health</h2>
+  <div class="grid grid-3">
+    <div class="stat-card">
+      <div class="stat-label">Bot Process</div>
+      <div class="stat-value" id="health-bot">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Exchange API</div>
+      <div class="stat-value" id="health-exchange">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Telegram</div>
+      <div class="stat-value" id="health-telegram">—</div>
+    </div>
+  </div>
+  <h3 style="margin-top: 1.5rem; font-size: 0.95rem;">Details</h3>
+  <div id="health-details" class="muted">Loading…</div>
+</div>
+
+</div><!-- /tab-strategy -->
+<div id="tab-preflight" style="display:none;">
+
+<!-- Preflight Checks -->
+<div class="card" style="margin-top: 1rem;">
+  <h2>Preflight Checks</h2>
+  <p class="muted">Choose which checks run when preflight executes (Preflight page → Refresh Checks). Disabled checks are skipped. Disabling checks weakens the safety gate — for example, the two Kraken permission checks are manual confirmations you can turn off once you have verified the key permissions in Kraken itself.</p>
+  <div id="preflight-checks-list" class="muted">Loading…</div>
+  <div class="button-row" style="margin-top: 0.75rem;">
+    <button class="btn btn-primary" id="save-preflight-checks">Save Preflight Checks</button>
+  </div>
+  <div id="preflight-checks-status" class="alert" style="display:none; margin-top: 1rem;"></div>
+</div>
+
+</div><!-- /tab-preflight -->
+<div id="tab-api-keys" style="display:none;">
+
+<!-- Exchange credentials -->
+<div class="card" style="margin-top: 1rem;">
+  <h2>Exchange Credentials (Kraken)</h2>
+  <p class="muted">Credentials are stored in a dedicated <code>secrets.json</code> file with 0600 permissions — never in <code>config.json</code>, never in backups. If the <code>KRAKEN_API_KEY</code> / <code>KRAKEN_API_SECRET</code> environment variables are set, they take precedence over the stored values. Changes require a restart.</p>
+  <form id="exchange-form" class="grid grid-2">
+    <div class="form-group">
+      <label for="exchange_api_key">API Key</label>
+      <input type="password" id="exchange_api_key" name="exchange_api_key" placeholder="••••••••••" autocomplete="new-password">
+    </div>
+    <div class="form-group">
+      <label for="exchange_api_secret">API Secret</label>
+      <input type="password" id="exchange_api_secret" name="exchange_api_secret" placeholder="••••••••••" autocomplete="new-password">
+    </div>
+  </form>
+  <div class="button-row" style="margin-top: 1rem;">
+    <button class="btn btn-primary" id="save-exchange">Save Credentials</button>
+    <button class="btn btn-danger" id="clear-exchange">Remove Stored Credentials</button>
+  </div>
+  <div id="exchange-cred-status" class="alert" style="display:none; margin-top: 1rem;"></div>
+</div>
+
+<!-- Telegram -->
+<div class="card" style="margin-top: 1rem;">
+  <h2>Telegram Notifications</h2>
+  <p class="muted">Credentials are stored in the secrets store (<code>data/secrets.json</code>, 0600) — never in <code>config.json</code> or backups. If the environment variables are set, they take precedence. Changes require a restart.</p>
+  <form id="telegram-form" class="grid grid-2">
+    <div class="form-group">
+      <label for="bot_token">Bot Token</label>
+      <input type="password" id="bot_token" name="bot_token" placeholder="••••••••••" autocomplete="new-password">
+      <div class="form-hint">Leave blank to keep the current token.</div>
+    </div>
+    <div class="form-group">
+      <label for="chat_id">Chat ID</label>
+      <input type="password" id="chat_id" name="chat_id" placeholder="••••••••" autocomplete="new-password">
+    </div>
+  </form>
+  <div class="button-row" style="margin-top: 1rem;">
+    <button class="btn btn-primary" id="save-telegram">Save Telegram Settings</button>
+    <button class="btn btn-secondary" id="test-telegram">Send Test Message</button>
+    <button class="btn btn-danger" id="clear-telegram">Remove Stored Credentials</button>
+  </div>
+  <div id="telegram-cred-status" class="alert" style="display:none; margin-top: 1rem;"></div>
+</div>
+
+<!-- Authentication -->
+</div><!-- /tab-api-keys -->
+<div id="tab-auth" style="display:none;">
+
+<div class="card" style="margin-top: 1rem;">
+  <h2>Local Admin</h2>
+  <p class="muted">Username/password login for the dashboard. The password is stored only as a bcrypt hash in the secrets store (<code>data/secrets.json</code>, 0600). If the <code>WEB_UI_USERNAME</code> / <code>WEB_UI_PASSWORD_HASH</code> environment variables are set, they take precedence. Applies to new logins immediately; existing sessions stay valid.</p>
+  <form id="web-auth-form" class="grid grid-2" onsubmit="return false;">
+    <div class="form-group">
+      <label for="web_auth_username">Username</label>
+      <input type="text" id="web_auth_username" name="web_auth_username" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label for="web_auth_password">New Password</label>
+      <input type="password" id="web_auth_password" name="web_auth_password" placeholder="••••••••••" autocomplete="new-password">
+      <div class="form-hint">Leave blank to keep the current password. Minimum 8 characters.</div>
+    </div>
+    <div class="form-group">
+      <label for="web_auth_password_confirm">Confirm New Password</label>
+      <input type="password" id="web_auth_password_confirm" name="web_auth_password_confirm" placeholder="••••••••••" autocomplete="new-password">
+    </div>
+  </form>
+  <div class="button-row" style="margin-top: 1rem;">
+    <button class="btn btn-primary" id="save-web-auth">Save Local Admin</button>
+    <button class="btn btn-danger" id="clear-web-auth">Remove Stored Credentials</button>
+  </div>
+  <div id="web-auth-status" class="alert" style="display:none; margin-top: 1rem;"></div>
+</div>
+
+<div class="card" style="margin-top: 1rem;">
+  <h2>Authentik (OIDC)</h2>
+  <p class="muted">Sign in via your Authentik SSO. Settings are stored in the secrets store (<code>data/secrets.json</code>, 0600) and take effect immediately unless the <code>OIDC_*</code> environment variables are set, which take precedence. Local login remains available as a fallback either way.</p>
+  <form id="oidc-form" class="grid grid-2" onsubmit="return false;">
+    <div class="form-group">
+      <label for="oidc_enabled">Enable Authentik Login</label>
+      <input type="checkbox" id="oidc_enabled" name="oidc_enabled">
+    </div>
+    <div class="form-group">
+      <label for="oidc_issuer_url">Issuer URL</label>
+      <input type="text" id="oidc_issuer_url" name="oidc_issuer_url" placeholder="https://auth.example.com/application/o/my-app/">
+      <div class="form-hint">The application issuer URL from Authentik, ending in a slash.</div>
+    </div>
+    <div class="form-group">
+      <label for="oidc_client_id">Client ID</label>
+      <input type="text" id="oidc_client_id" name="oidc_client_id" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label for="oidc_client_secret">Client Secret</label>
+      <input type="password" id="oidc_client_secret" name="oidc_client_secret" placeholder="••••••••••" autocomplete="new-password">
+      <div class="form-hint">Leave blank to keep the current secret.</div>
+    </div>
+    <div class="form-group">
+      <label for="oidc_redirect_uri">Redirect URI</label>
+      <input type="text" id="oidc_redirect_uri" name="oidc_redirect_uri" placeholder="https://crypto-bot.example.com/auth/callback">
+      <div class="form-hint">Leave blank to use the request's own origin + <code>/auth/callback</code>.</div>
+    </div>
+    <div class="form-group">
+      <label for="oidc_scopes">Scopes</label>
+      <input type="text" id="oidc_scopes" name="oidc_scopes" placeholder="openid email profile">
+    </div>
+  </form>
+  <div class="button-row" style="margin-top: 1rem;">
+    <button class="btn btn-primary" id="save-oidc">Save Authentik Settings</button>
+    <button class="btn btn-danger" id="clear-oidc">Remove Stored Settings</button>
+  </div>
+  <div id="oidc-status" class="alert" style="display:none; margin-top: 1rem;"></div>
+</div>
+
+<div class="card" style="margin-top: 1rem;">
+  <h2>Authentication Status</h2>
+  <p class="muted">Both sign-in methods are always available: local username/password and Authentik (OIDC). Values are shown masked.</p>
+  <div id="auth-status" class="muted">Loading…</div>
+</div>
+
+</div><!-- /tab-auth -->
+
+{% endblock %}
+{% block scripts %}
+<script>
+  const DEFAULT_TIERS = [
+    { threshold_percent: 10.0, amount: 0.0, enabled: true },
+    { threshold_percent: 5.0, amount: 0.00005, enabled: true },
+    { threshold_percent: -2.0, amount: 0.0001, enabled: true },
+    { threshold_percent: -5.0, amount: 0.00015, enabled: true },
+    { threshold_percent: -10.0, amount: 0.0002, enabled: true },
+    { threshold_percent: -20.0, amount: 0.0003, enabled: true },
+  ];
+
+  // Strategy settings
+  async function loadSettings() {
+    const data = await apiGet('/api/settings');
+    for (const [key, value] of Object.entries(data)) {
+      if (key === 'dynamic_dca') {
+        loadDynamicDCA(value || {});
+        continue;
+      }
+      const el = document.getElementById(key);
+      if (!el) continue;
+      if (el.type === 'checkbox') {
+        el.checked = !!value;
+        continue;
+      }
+      if (key === 'dca_end_date' && value) {
+        el.value = value.split('T')[0];
+      } else if ((key === 'max_price' || key === 'max_monthly_amount') && value === null) {
+        el.value = '';
+      } else {
+        el.value = value;
+      }
+    }
+  }
+
+  function loadDynamicDCA(dd) {
+    document.getElementById('dynamic_dca_enabled').checked = !!dd.enabled;
+    document.getElementById('dynamic_dca_reference').value = dd.reference || 'last_buy';
+    document.getElementById('dynamic_dca_cooldown_hours').value = dd.cooldown_hours ?? 24;
+    renderTiers(dd.tiers || DEFAULT_TIERS);
+  }
+
+  function tierExample(threshold) {
+    if (threshold >= 10) return 'Skip';
+    if (threshold >= 5) return 'Small buy';
+    if (threshold >= -2) return 'Base buy';
+    if (threshold >= -5) return 'Larger buy';
+    if (threshold >= -10) return 'Big buy';
+    return 'Largest buy';
+  }
+
+  function createTierRow(tier) {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td><input type="number" step="0.1" class="tier-threshold" data-key="threshold_percent" value="${tier.threshold_percent}"></td>
+      <td><input type="number" step="0.00000001" class="tier-amount" data-key="amount" value="${tier.amount}"></td>
+      <td><input type="checkbox" class="tier-enabled" data-key="enabled" ${tier.enabled ? 'checked' : ''}></td>
+      <td class="muted">${tierExample(tier.threshold_percent)}</td>
+      <td><button type="button" class="btn btn-small btn-danger remove-tier">Remove</button></td>
+    `;
+    row.querySelector('.remove-tier').addEventListener('click', () => {
+      row.remove();
+    });
+    return row;
+  }
+
+  function renderTiers(tiers) {
+    const tbody = document.querySelector('#dynamic-dca-tiers tbody');
+    tbody.innerHTML = '';
+    const sorted = [...tiers].sort((a, b) => b.threshold_percent - a.threshold_percent);
+    for (const tier of sorted) {
+      tbody.appendChild(createTierRow(tier));
+    }
+  }
+
+  function collectDynamicDCA() {
+    const tiers = [];
+    const rows = document.querySelectorAll('#dynamic-dca-tiers tbody tr');
+    for (const row of rows) {
+      const threshold = parseFloat(row.querySelector('.tier-threshold').value);
+      const amount = parseFloat(row.querySelector('.tier-amount').value);
+      const enabled = row.querySelector('.tier-enabled').checked;
+      tiers.push({ threshold_percent: threshold, amount: amount, enabled: enabled });
+    }
+    return {
+      enabled: document.getElementById('dynamic_dca_enabled').checked,
+      reference: document.getElementById('dynamic_dca_reference').value,
+      cooldown_hours: parseFloat(document.getElementById('dynamic_dca_cooldown_hours').value),
+      tiers: tiers,
+    };
+  }
+
+  document.getElementById('add-tier').addEventListener('click', () => {
+    const tbody = document.querySelector('#dynamic-dca-tiers tbody');
+    tbody.appendChild(createTierRow({ threshold_percent: 0.0, amount: 0.0001, enabled: true }));
+  });
+
+  document.getElementById('reset-tiers').addEventListener('click', async () => {
+    if (!(await uiConfirm('Reset tiers to the default set?', { title: 'Reset tiers', danger: false }))) return;
+    renderTiers(DEFAULT_TIERS);
+  });
+
+  document.getElementById('save-settings').addEventListener('click', async () => {
+    const form = document.getElementById('settings-form');
+    const formData = new FormData(form);
+    const payload = {};
+    formData.forEach((v, k) => {
+      if (v === '') return;
+      if (['deposit_day', 'buy_hour', 'poll_interval_seconds'].includes(k)) payload[k] = parseInt(v, 10);
+      else if (['crypto_amount', 'dip_threshold_percent', 'dip_buy_cooldown_hours', 'max_price', 'max_monthly_amount'].includes(k)) payload[k] = parseFloat(v);
+      else payload[k] = v;
+    });
+    payload.dynamic_dca = collectDynamicDCA();
+    try {
+      const data = await apiPut('/api/settings', payload);
+      showToast(data.message, 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.getElementById('restore-settings').addEventListener('click', async () => {
+    if (!(await uiConfirm('Restore the previous valid configuration?', { title: 'Restore configuration', danger: false }))) return;
+    try {
+      const data = await apiPost('/api/settings/restore');
+      showToast(data.message, 'success');
+      loadSettings();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.getElementById('restart-bot').addEventListener('click', async () => {
+    if (!(await uiConfirm('Restart the bot? The container will restart and apply any saved settings.', { title: 'Restart bot', confirmText: 'Restart' }))) return;
+    try {
+      const data = await apiPost('/api/bot/restart');
+      showToast(data.message, 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.getElementById('show-runtime-config').addEventListener('click', async () => {
+    const modal = document.getElementById('runtime-config-modal');
+    const content = document.getElementById('runtime-config-content');
+    modal.style.display = 'block';
+    content.textContent = 'Loading…';
+    try {
+      const data = await apiGet('/api/settings/runtime');
+      content.textContent = JSON.stringify(data, null, 2);
+    } catch (err) {
+      content.textContent = 'Error: ' + err.message;
+    }
+  });
+
+  document.getElementById('close-runtime-config').addEventListener('click', () => {
+    document.getElementById('runtime-config-modal').style.display = 'none';
+  });
+
+  document.querySelector('#runtime-config-modal .modal-backdrop').addEventListener('click', () => {
+    document.getElementById('runtime-config-modal').style.display = 'none';
+  });
+
+  // Exchange credentials
+  function renderExchangeStatus(status) {
+    const el = document.getElementById('exchange-cred-status');
+    const source = status.effective_source === 'environment'
+      ? 'environment variables (take precedence)'
+      : status.effective_source === 'secrets_file'
+        ? `secrets store (key ${status.stored_key_masked})`
+        : 'not configured';
+    el.style.display = 'block';
+    el.className = 'alert ' + (status.effective_source === 'unset' ? 'error' : 'ok');
+    el.textContent = `Effective credentials: ${source}.`;
+  }
+
+  async function loadExchangeStatus() {
+    try {
+      renderExchangeStatus(await apiGet('/api/settings/exchange'));
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  document.getElementById('save-exchange').addEventListener('click', async () => {
+    const api_key = document.getElementById('exchange_api_key').value;
+    const api_secret = document.getElementById('exchange_api_secret').value;
+    if (!api_key || !api_secret) {
+      showToast('Enter both API key and API secret.', 'error');
+      return;
+    }
+    try {
+      const data = await apiPut('/api/settings/exchange', { api_key, api_secret });
+      showToast(data.message, 'success');
+      document.getElementById('exchange_api_key').value = '';
+      document.getElementById('exchange_api_secret').value = '';
+      if (data.exchange) renderExchangeStatus(data.exchange);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.getElementById('clear-exchange').addEventListener('click', async () => {
+    if (!(await uiConfirm('Remove the stored Kraken credentials from the secrets store? Environment variables are not affected.', { title: 'Remove Kraken credentials', confirmText: 'Remove' }))) return;
+    try {
+      const data = await apiPost('/api/settings/exchange/clear');
+      showToast(data.message, 'success');
+      if (data.exchange) renderExchangeStatus(data.exchange);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  // Telegram
+  document.getElementById('save-telegram').addEventListener('click', async () => {
+    const payload = {
+      bot_token: document.getElementById('bot_token').value,
+      chat_id: document.getElementById('chat_id').value,
+    };
+    try {
+      const data = await apiPut('/api/telegram', payload);
+      showToast(data.message, 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.getElementById('test-telegram').addEventListener('click', async () => {
+    try {
+      const data = await apiPost('/api/telegram/test');
+      showToast(data.message, data.success ? 'success' : 'error');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.getElementById('clear-telegram').addEventListener('click', async () => {
+    if (!(await uiConfirm('Remove the stored Telegram credentials from the secrets store? Environment variables are not affected.', { title: 'Remove Telegram credentials', confirmText: 'Remove' }))) return;
+    try {
+      const data = await apiPost('/api/telegram/clear');
+      showToast(data.message, 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  // Authentication status + forms
+  async function loadAuthStatus() {
+    const el = document.getElementById('auth-status');
+    try {
+      const data = await apiGet('/api/settings/auth');
+      const src = (f) => f.source === 'environment' ? 'environment' : (f.source === 'secrets_file' ? 'secrets store' : 'not set');
+      const badge = (on) => `<span class="badge ${on ? 'ok' : 'warn'}">${on ? 'On' : 'Off'}</span>`;
+      el.innerHTML = `
+        <div class="grid grid-2">
+          <div><strong>Local login user:</strong> ${data.local.username} (${data.local.username_source})</div>
+          <div><strong>Password:</strong> ${data.local.password_hash.set ? 'set (' + src(data.local.password_hash) + ')' : 'not set'}</div>
+          <div><strong>Session secret:</strong> ${data.local.session_secret.set ? 'set (' + src(data.local.session_secret) + ')' : 'not set'}</div>
+          <div><strong>Authentik (OIDC):</strong> ${badge(data.oidc_enabled)} ${data.oidc.fields.issuer_url.value ? '— ' + data.oidc.fields.issuer_url.value : ''}</div>
+          <div><strong>OIDC client:</strong> ${data.oidc.fields.client_id.set ? data.oidc.fields.client_id.value + ' (' + src(data.oidc.fields.client_id) + ')' : 'not set'}</div>
+          <div><strong>OIDC client secret:</strong> ${data.oidc.fields.client_secret.set ? 'set (' + src(data.oidc.fields.client_secret) + ')' : 'not set'}</div>
+        </div>`;
+
+      // Prefill the forms with the effective (non-secret) values.
+      document.getElementById('web_auth_username').value = data.local.username || '';
+      document.getElementById('oidc_enabled').checked = data.oidc_enabled === true;
+      document.getElementById('oidc_issuer_url').value = data.oidc.fields.issuer_url.value || '';
+      document.getElementById('oidc_client_id').value = data.oidc.fields.client_id.value || '';
+      document.getElementById('oidc_redirect_uri').value = data.oidc.fields.redirect_uri.value || '';
+      document.getElementById('oidc_scopes').value = data.oidc.fields.scopes.value || '';
+    } catch (err) {
+      el.textContent = 'Error: ' + err.message;
+    }
+  }
+
+  function renderSectionStatus(elId, status, label) {
+    const el = document.getElementById(elId);
+    const source = status.effective_source === 'environment'
+      ? 'environment variables (take precedence)'
+      : status.effective_source === 'secrets_file'
+        ? 'secrets store'
+        : 'not configured';
+    el.style.display = 'block';
+    el.className = 'alert ' + (status.effective_source === 'unset' ? 'error' : 'ok');
+    el.textContent = `${label}: ${source}.`;
+  }
+
+  document.getElementById('save-web-auth').addEventListener('click', async () => {
+    const password = document.getElementById('web_auth_password').value;
+    const confirmPassword = document.getElementById('web_auth_password_confirm').value;
+    if (password && password !== confirmPassword) {
+      showToast('Passwords do not match.', 'error');
+      return;
+    }
+    const username = document.getElementById('web_auth_username').value.trim();
+    if (!username && !password) {
+      showToast('Enter a username and/or a new password.', 'error');
+      return;
+    }
+    if (password && password.length < 8) {
+      showToast('Password must be at least 8 characters.', 'error');
+      return;
+    }
+    try {
+      const payload = {};
+      if (username) payload.username = username;
+      if (password) payload.password = password;
+      const data = await apiPut('/api/settings/web', payload);
+      showToast(data.message, 'success');
+      document.getElementById('web_auth_password').value = '';
+      document.getElementById('web_auth_password_confirm').value = '';
+      renderSectionStatus('web-auth-status', data.web, 'Local admin');
+      await loadAuthStatus();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.getElementById('clear-web-auth').addEventListener('click', async () => {
+    if (!(await uiConfirm('Remove the stored local admin credentials from the secrets store? Environment variables are not affected.', { title: 'Remove local admin credentials', confirmText: 'Remove' }))) return;
+    try {
+      const data = await apiPost('/api/settings/web/clear');
+      showToast(data.message, 'success');
+      renderSectionStatus('web-auth-status', data.web, 'Local admin');
+      await loadAuthStatus();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.getElementById('save-oidc').addEventListener('click', async () => {
+    const enabled = document.getElementById('oidc_enabled').checked;
+    if (enabled && !(await uiConfirm('Enable Authentik login? Make sure the issuer URL and client ID are correct.', { title: 'Enable Authentik login', danger: false }))) return;
+    const payload = { enabled: enabled };
+    for (const id of ['oidc_issuer_url', 'oidc_client_id', 'oidc_client_secret', 'oidc_redirect_uri', 'oidc_scopes']) {
+      const value = document.getElementById(id).value.trim();
+      if (value) payload[id.replace(/^oidc_/, '')] = value;
+    }
+    try {
+      const data = await apiPut('/api/settings/oidc', payload);
+      showToast(data.message, 'success');
+      document.getElementById('oidc_client_secret').value = '';
+      renderSectionStatus('oidc-status', data.oidc, 'Authentik (OIDC)');
+      await loadAuthStatus();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.getElementById('clear-oidc').addEventListener('click', async () => {
+    if (!(await uiConfirm('Remove the stored Authentik settings from the secrets store? Environment variables are not affected.', { title: 'Remove Authentik settings', confirmText: 'Remove' }))) return;
+    try {
+      const data = await apiPost('/api/settings/oidc/clear');
+      showToast(data.message, 'success');
+      renderSectionStatus('oidc-status', data.oidc, 'Authentik (OIDC)');
+      await loadAuthStatus();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  // Settings sub-section tabs
+  document.querySelectorAll('.settings-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      for (const name of ['strategy', 'preflight', 'api-keys', 'auth']) {
+        document.getElementById('tab-' + name).style.display = (name === tab.dataset.tab) ? '' : 'none';
+      }
+    });
+  });
+
+  // Preflight checks
+  async function loadPreflightChecks() {
+    const el = document.getElementById('preflight-checks-list');
+    try {
+      const data = await apiGet('/api/preflight/checks');
+      const byCategory = {};
+      for (const check of data.checks) {
+        (byCategory[check.category] = byCategory[check.category] || []).push(check);
+      }
+      el.innerHTML = Object.entries(byCategory).map(([category, checks]) => `
+        <h3 style="font-size: 0.9rem; margin: 0.75rem 0 0.4rem; text-transform: capitalize;">${escapeHtml(category)}</h3>
+        ${checks.map(check => `
+          <label style="display:block; padding: 0.15rem 0; font-size: 0.9rem;">
+            <input type="checkbox" class="preflight-check" data-name="${escapeHtml(check.name)}" ${check.enabled ? 'checked' : ''}>
+            <strong>${escapeHtml(check.name)}</strong>
+            <span class="muted">— ${escapeHtml(check.description)}</span>
+          </label>
+        `).join('')}
+      `).join('');
+    } catch (err) {
+      el.textContent = 'Error: ' + err.message;
+    }
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text == null ? '' : String(text);
+    return div.innerHTML;
+  }
+
+  document.getElementById('save-preflight-checks').addEventListener('click', async () => {
+    const disabled = [];
+    document.querySelectorAll('.preflight-check').forEach(box => {
+      if (!box.checked) disabled.push(box.dataset.name);
+    });
+    try {
+      const data = await apiPut('/api/settings', { preflight_disabled_checks: disabled });
+      showToast(data.message, 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  // Health
+  async function loadHealth() {
+    const data = await apiGet('/api/health');
+    document.getElementById('health-bot').innerHTML = `<span class="badge ${data.bot_process ? 'ok' : 'error'}">${data.bot_process ? 'Healthy' : 'Down'}</span>`;
+    document.getElementById('health-exchange').innerHTML = `<span class="badge ${data.exchange_api ? 'ok' : 'warn'}">${data.exchange_api ? 'Connected' : 'Disconnected'}</span>`;
+    document.getElementById('health-telegram').innerHTML = `<span class="badge ${data.telegram_api ? 'ok' : 'warn'}">${data.telegram_api ? 'Configured' : 'Not configured'}</span>`;
+    document.getElementById('health-details').innerHTML = `
+      <div class="grid grid-2">
+        <div><strong>Version:</strong> ${data.version}</div>
+        <div><strong>Runtime:</strong> ${data.runtime}</div>
+        <div><strong>Server Time:</strong> ${data.server_time}</div>
+        <div><strong>Timezone:</strong> ${data.timezone}</div>
+        <div><strong>Last Price Update:</strong> ${data.last_price_update}</div>
+        <div><strong>Last Order:</strong> ${data.last_order}</div>
+      </div>
+    `;
+  }
+
+  (async () => {
+    await loadSettings();
+    await loadHealth();
+    await loadExchangeStatus();
+    await loadAuthStatus();
+    await loadPreflightChecks();
+    setInterval(loadHealth, 10000);
+  })();
+</script>
+{% endblock %}

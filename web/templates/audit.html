@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Audit History — DCA-Bot{% endblock %}
+{% block page_title %}Audit History{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Configuration & Control Audit Log</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Time</th><th>User</th><th>Action</th><th>Details</th><th>Source IP</th></tr>
+      </thead>
+      <tbody id="audit-body"></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  async function loadAudit() {
+    const data = await apiGet('/api/settings/history');
+    const tbody = document.getElementById('audit-body');
+    tbody.innerHTML = '';
+    if (!data.history || data.history.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No audit entries yet.</td></tr>';
+      return;
+    }
+    data.history.slice().reverse().forEach(e => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${new Date(e.timestamp).toLocaleString()}</td>
+        <td>${e.user}</td>
+        <td>${e.action}</td>
+        <td><code>${JSON.stringify(e.details).slice(0, 120)}</code></td>
+        <td>${e.source_ip}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+  loadAudit();
+</script>
+{% endblock %}

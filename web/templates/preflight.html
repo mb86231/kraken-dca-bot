@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}Production Preflight — DCA-Bot{% endblock %}
+{% block page_title %}Production Preflight{% endblock %}
+
+{% block content %}
+<div class="preflight-page">
+  <div class="preflight-header">
+    <div class="preflight-status" id="preflight-status">
+      <span class="badge badge-loading">Loading…</span>
+    </div>
+    <div class="preflight-meta" id="preflight-meta"></div>
+    <div class="preflight-actions">
+      <button class="btn btn-small btn-primary" id="preflight-refresh" data-csrf="{{ csrf_token }}">Refresh Checks</button>
+    </div>
+  </div>
+
+  <div class="preflight-summary" id="preflight-summary"></div>
+
+  <table class="data-table" id="preflight-table">
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Check</th>
+        <th>Category</th>
+        <th>Message</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="preflight-body">
+      <tr><td colspan="5">Loading preflight checks…</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const statusEl = document.getElementById('preflight-status');
+  const metaEl = document.getElementById('preflight-meta');
+  const summaryEl = document.getElementById('preflight-summary');
+  const bodyEl = document.getElementById('preflight-body');
+  const refreshBtn = document.getElementById('preflight-refresh');
+
+  function statusClass(status) {
+    const s = (status || '').toUpperCase();
+    if (s === 'PASS') return 'badge-success';
+    if (s === 'WARN') return 'badge-warning';
+    if (s === 'FAIL') return 'badge-danger';
+    return 'badge-secondary';
+  }
+
+  function statusIcon(status) {
+    const s = (status || '').toUpperCase();
+    if (s === 'PASS') return '✓';
+    if (s === 'WARN') return '⚠';
+    if (s === 'FAIL') return '✗';
+    return '?';
+  }
+
+  function render(data) {
+    const overall = data.overall || 'UNKNOWN';
+    statusEl.innerHTML = `<span class="badge ${statusClass(overall)}">${overall}</span>`;
+
+    const ranAt = data.ran_at ? new Date(data.ran_at).toLocaleString() : '—';
+    const expiresAt = data.expires_at ? new Date(data.expires_at).toLocaleString() : '—';
+    metaEl.innerHTML = `
+      Ran: <strong>${ranAt}</strong> &nbsp;|&nbsp;
+      Expires: <strong>${expiresAt}</strong> &nbsp;|&nbsp;
+      Live orders: <strong>${data.can_place_live_orders ? 'allowed' : 'blocked'}</strong>
+    `;
+
+    let summaryHtml = '';
+    if (data.failures && data.failures.length) {
+      summaryHtml += `<div class="alert alert-danger"><strong>Failures:</strong><ul>${data.failures.map(f => `<li>${escapeHtml(f)}</li>`).join('')}</ul></div>`;
+    }
+    if (data.warnings && data.warnings.length) {
+      summaryHtml += `<div class="alert alert-warning"><strong>Warnings:</strong><ul>${data.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul></div>`;
+    }
+    if (!summaryHtml && overall === 'PASS') {
+      summaryHtml = `<div class="alert alert-success">All checks passed. Preflight is green.</div>`;
+    }
+    summaryEl.innerHTML = summaryHtml;
+
+    const checks = data.checks || [];
+    if (checks.length === 0) {
+      bodyEl.innerHTML = '<tr><td colspan="5">No checks returned.</td></tr>';
+      return;
+    }
+    bodyEl.innerHTML = checks.map(check => `
+      <tr class="check-${(check.status || '').toLowerCase()}">
+        <td><span class="badge ${statusClass(check.status)}">${statusIcon(check.status)} ${check.status}</span></td>
+        <td>${escapeHtml(check.name)}</td>
+        <td>${escapeHtml(check.category)}</td>
+        <td>${escapeHtml(check.message)}</td>
+        <td>${actionCell(check)}</td>
+      </tr>
+    `).join('');
+    bodyEl.querySelectorAll('[data-ack-check]').forEach(btn => {
+      btn.addEventListener('click', () => acknowledgeCheck(btn.dataset.ackCheck));
+    });
+  }
+
+  // Checks Kraken cannot verify via API — acknowledging disables them
+  // (same as unchecking them in Settings → Preflight).
+  const MANUAL_ACK_CHECKS = ['kraken_minimum_permissions', 'kraken_withdrawal_permission'];
+
+  function actionCell(check) {
+    if (MANUAL_ACK_CHECKS.includes(check.name) && (check.status || '').toUpperCase() === 'WARN') {
+      return `<button type="button" class="btn btn-small btn-secondary" data-ack-check="${escapeHtml(check.name)}">Acknowledge</button>`;
+    }
+    return '';
+  }
+
+  async function acknowledgeCheck(name) {
+    const ok = await uiConfirm(
+      'Acknowledge this check? It will be disabled and skipped in future preflight runs. You can re-enable it in Settings → Preflight.',
+      { title: 'Acknowledge check', danger: false, confirmText: 'Acknowledge' }
+    );
+    if (!ok) return;
+    try {
+      const checksData = await apiGet('/api/preflight/checks');
+      const disabled = new Set(checksData.disabled || []);
+      disabled.add(name);
+      await apiPut('/api/settings', { preflight_disabled_checks: [...disabled] });
+      showToast('Check acknowledged. Re-running preflight…', 'success');
+      await runPreflight();
+    } catch (err) {
+      showToast('Failed to acknowledge check: ' + err.message, 'error');
+    }
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+  }
+
+  async function loadPreflight() {
+    try {
+      statusEl.innerHTML = '<span class="badge badge-loading">Loading…</span>';
+      const res = await fetch('/api/preflight', { headers: { 'Accept': 'application/json' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      render(await res.json());
+    } catch (err) {
+      bodyEl.innerHTML = `<tr><td colspan="5" class="text-danger">Failed to load preflight: ${escapeHtml(err.message)}</td></tr>`;
+      statusEl.innerHTML = '<span class="badge badge-danger">Error</span>';
+    }
+  }
+
+  async function runPreflight() {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = 'Running…';
+    try {
+      const res = await fetch('/api/preflight/run', {
+        method: 'POST',
+        headers: {
+          'X-CSRF-Token': refreshBtn.dataset.csrf,
+          'Accept': 'application/json',
+        },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      render(await res.json());
+    } catch (err) {
+      bodyEl.innerHTML = `<tr><td colspan="5" class="text-danger">Failed to run preflight: ${escapeHtml(err.message)}</td></tr>`;
+      statusEl.innerHTML = '<span class="badge badge-danger">Error</span>';
+    } finally {
+      refreshBtn.disabled = false;
+      refreshBtn.textContent = 'Refresh Checks';
+    }
+  }
+
+  refreshBtn.addEventListener('click', runPreflight);
+  loadPreflight();
+})();
+</script>
+{% endblock %}

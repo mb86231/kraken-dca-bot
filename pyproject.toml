@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dca-bot"
+version = "1.1.0"
+description = "Python-based Kraken DCA trading bot with FastAPI dashboard"
+requires-python = ">=3.11,<3.13"
+
+[tool.mypy]
+python_version = "3.11"
+warn_redundant_casts = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "jose.*"
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["bot", "web", "scripts"]
+branch = true
+omit = [
+    "tests/*",
+    ".venv/*",
+    "venv/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+# Initial baseline threshold. Increase in stages as tests are added for
+# historically hard-to-cover paths such as network I/O and the full trading loop.
+fail_under = 75
+show_missing = true

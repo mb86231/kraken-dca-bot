@@ -1,0 +1,62 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+config.json.bak
+*.key
+*.pem
+*.secret
+
+# Runtime data that must not be committed
+transactions.json
+transactions.json.bak
+runtime_overrides.json
+.health
+
+# Generated data directories
+data/
+backups/
+exports/
+logs/
+
+# Docker artifacts
+Dockerfile.local
+docker-compose.override.yml
+compose.override.yaml
+
+# Editor and OS files
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.code-workspace
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Logs
+*.log
+
+# Node/build artifacts (if added later)
+node_modules/
+dist/
+build/
+
+# Coverage
+coverage/
+.coverage
+coverage.xml
+
+# Pre-commit / secret scanning caches
+.tmp-ssh/
+.tmp-ssh*/

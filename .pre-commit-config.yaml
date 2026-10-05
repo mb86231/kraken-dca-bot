@@ -1,0 +1,23 @@
+repos:
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: package.lock.json
+
+  - repo: local
+    hooks:
+      - id: check-for-env-files
+        name: Check for committed .env files
+        entry: bash -c 'for f in "$@"; do echo "Committed env file: $f"; exit 1; done'
+        language: system
+        files: '\.env$'
+        pass_filenames: true
+
+      - id: check-for-secrets-in-config
+        name: Check config.json for API credentials
+        entry: bash -c 'if grep -qiE '"'"'"api_key"|"api_secret"'"'"' config.json; then echo "ERROR: config.json contains api_key/api_secret"; exit 1; fi'
+        language: system
+        files: 'config\.json$'
+        pass_filenames: false

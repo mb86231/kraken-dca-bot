@@ -1,0 +1,140 @@
+"""Tests for the Kraken API client retry, error parsing, and helper paths."""
+
+from __future__ import annotations
+
+import base64
+import urllib.error
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from bot.api_client import KrakenAPI
+
+
+def _make_api():
+    # KrakenAPI expects api_secret to be base64-encoded for HMAC.
+    secret = base64.b64encode(b"test-secret").decode()
+    return KrakenAPI("test-key", secret)
+
+
+def test_get_ticker_alt_pair_mapping():
+    api = _make_api()
+    fake_response = MagicMock()
+    fake_response.read.return_value = (
+        b'{"error": [], "result": {"XXBTZUSD": {"c": ["55000.0", "1.0"]}}}'
+    )
+    fake_response.__enter__ = MagicMock(return_value=fake_response)
+    fake_response.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=fake_response):
+        # Requested pair not in result, but an aliased version is.
+        price = api.get_ticker("XBTUSD")
+    assert price == 55000.0
+
+
+def test_get_balance_parses_result():
+    api = _make_api()
+    fake_response = MagicMock()
+    fake_response.read.return_value = (
+        b'{"error": [], "result": {"ZCHF": "1234.56", "CHF": "1234.56"}}'
+    )
+    fake_response.__enter__ = MagicMock(return_value=fake_response)
+    fake_response.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=fake_response):
+        balance = api.get_balance()
+
+    assert balance["ZCHF"] == 1234.56
+    assert balance["CHF"] == 1234.56
+
+
+def test_get_ohlc_returns_candles():
+    api = _make_api()
+    fake_response = MagicMock()
+    fake_response.read.return_value = (
+        b'{"error": [], "result": {"XBTCHF": [[1000, 1.0, 2.0, 0.5, 1.5, 1.2, 10.0, 5]]}}'
+    )
+    fake_response.__enter__ = MagicMock(return_value=fake_response)
+    fake_response.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=fake_response):
+        candles = api.get_ohlc("XBTCHF", interval=60)
+
+    assert candles == [[1000, 1.0, 2.0, 0.5, 1.5, 1.2, 10.0, 5]]
+
+
+def test_api_request_retries_on_rate_limit():
+    api = _make_api()
+
+    class FakeRateLimitError(urllib.error.HTTPError):
+        def __init__(self):
+            super().__init__("url", 429, "Too Many Requests", {}, None)
+
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        # Third attempt succeeds.
+        success_response = MagicMock()
+        success_response.read.return_value = b'{"error": [], "result": {"ZCHF": "100.0"}}'
+        success_response.__enter__ = MagicMock(return_value=success_response)
+        success_response.__exit__ = MagicMock(return_value=False)
+
+        mock_urlopen.side_effect = [
+            FakeRateLimitError(),
+            FakeRateLimitError(),
+            success_response,
+        ]
+
+        with patch("time.sleep"):  # speed up test
+            balance = api.get_balance()
+
+    assert balance["ZCHF"] == 100.0
+    assert mock_urlopen.call_count == 3
+
+
+def test_api_request_transient_error_raises_with_status():
+    api = _make_api()
+
+    class FakeHTTPError(urllib.error.HTTPError):
+        def __init__(self):
+            super().__init__("url", 500, "Internal Server Error", {}, None)
+
+    with patch("urllib.request.urlopen", side_effect=FakeHTTPError()), patch("time.sleep"):
+        with pytest.raises(Exception, match="HTTP Error 500"):
+            api.get_balance()
+
+
+def test_api_request_url_error_raises():
+    api = _make_api()
+
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=urllib.error.URLError("Name or service not known"),
+    ), patch("time.sleep"):
+        with pytest.raises(Exception, match="Connection Error"):
+            api.get_balance()
+
+
+def test_get_system_status_online():
+    api = _make_api()
+    fake_response = MagicMock()
+    fake_response.read.return_value = b'{"error": [], "result": {"status": "online"}}'
+    fake_response.__enter__ = MagicMock(return_value=fake_response)
+    fake_response.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=fake_response):
+        assert api.get_system_status() is True
+
+
+def test_get_system_status_not_online():
+    api = _make_api()
+    fake_response = MagicMock()
+    fake_response.read.return_value = b'{"error": [], "result": {"status": "maintenance"}}'
+    fake_response.__enter__ = MagicMock(return_value=fake_response)
+    fake_response.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=fake_response):
+        with pytest.raises(Exception, match="Kraken API status"):
+            api.get_system_status()
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
