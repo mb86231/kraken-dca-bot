@@ -159,5 +159,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
-# NOTE: ruleset live push test marker (2026-10-05) — safe to remove.
