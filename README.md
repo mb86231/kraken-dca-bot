@@ -17,6 +17,24 @@ A secure, self-hosted bot for automated Dollar Cost Averaging (DCA) on the Krake
 - **Security-first web UI** — bcrypt password hashing, signed sessions, CSRF protection, rate limiting, login lockout, optional OIDC single sign-on via Authentik
 - **Auditable** — structured JSON logs with secret redaction, config change audit trail, detect-secrets pre-commit scanning
 
+## Screenshots
+
+**Dashboard** — portfolio KPIs, recent buys, and the market price chart with bot buys overlaid:
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+**Performance** — invested vs. market value and unrealized P/L over time:
+
+![Performance](docs/screenshots/performance.png)
+
+**Strategy settings** — trading pair, schedule, budgets, and limits:
+
+![Strategy settings](docs/screenshots/settings-strategy.png)
+
+**Dynamic DCA tiers** — buy amounts that scale with the price trend, fully configurable:
+
+![Dynamic DCA tiers](docs/screenshots/settings-dynamic-dca.png)
+
 ## Quick Start (prebuilt image, ~2 minutes)
 
 Prerequisites: Docker with the Compose plugin. A Kraken account.
