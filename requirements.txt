@@ -7,7 +7,7 @@ jinja2==3.1.4
 python-multipart==0.0.9
 
 # Validation
-pydantic==2.7.4
+pydantic==2.13.5
 
 # Security: signed sessions, CSRF tokens, password hashing
 itsdangerous==2.2.0
