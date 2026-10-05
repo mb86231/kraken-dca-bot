@@ -23,7 +23,7 @@ slowapi==0.1.9
 
 # Timezone handling
 pytz==2024.1
-tzdata==2024.1
+tzdata==2026.4
 
 # Cross-process file locking for JSON persistence
 filelock==3.32.0
