@@ -55,7 +55,8 @@ jobs:
         run: |
           pip install detect-secrets==1.5.0
           cp .secrets.baseline "$RUNNER_TEMP/baseline.before"
-          detect-secrets scan --baseline .secrets.baseline --all-files
+          detect-secrets scan --baseline .secrets.baseline --all-files \
+            --exclude-files '^\.git/'
           python <<'EOF'
           import json, sys, pathlib, traceback
           try:
