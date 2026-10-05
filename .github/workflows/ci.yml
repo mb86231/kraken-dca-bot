@@ -96,14 +96,17 @@ jobs:
 
       - name: Check no internal facts leaked into the public tree
         run: |
-          if grep -rInE 'example\.com|192\.168\.[13]\.' --exclude-dir=.git .; then
-            echo "internal infrastructure facts leaked into the public tree" >&2
+          leaks=$(grep -rInE 'example\.com|192\.168\.[13]\.' --exclude-dir=.git . || true)
+          if [ -n "$leaks" ]; then
+            echo "$leaks" | head -10 | sed 's/%/%25/g' | while IFS= read -r line; do
+              echo "::error title=internal-fact leak::${line}"
+            done
             exit 1
           fi
           for p in .gitea compose.staging.yaml .env.staging.example \
                     SHARING_CHECKLIST.md docs/staging-implementation-plan.md; do
             if [ -e "$p" ]; then
-              echo "excluded path present in public tree: $p" >&2
+              echo "::error title=excluded path present in public tree::$p"
               exit 1
             fi
           done
