@@ -15,13 +15,16 @@ from bot.secrets_store import SecretsStore
 logger = logging.getLogger("dca_bot.config")
 
 
+# Default tier set for BTC pairs. Amounts sit comfortably above Kraken's
+# ordermin (0.00005 XBT for XXBTZEUR) while keeping individual buys in a
+# typical DCA range; scale proportionally for other base assets or budgets.
 DEFAULT_DYNAMIC_TIERS: List[dict[str, Any]] = [
     {"threshold_percent": 10.0, "amount": 0.0, "enabled": True},
-    {"threshold_percent": 5.0, "amount": 0.00005, "enabled": True},
-    {"threshold_percent": -2.0, "amount": 0.0001, "enabled": True},
-    {"threshold_percent": -5.0, "amount": 0.00015, "enabled": True},
-    {"threshold_percent": -10.0, "amount": 0.0002, "enabled": True},
-    {"threshold_percent": -20.0, "amount": 0.0003, "enabled": True},
+    {"threshold_percent": 5.0, "amount": 0.0005, "enabled": True},
+    {"threshold_percent": -2.0, "amount": 0.00075, "enabled": True},
+    {"threshold_percent": -5.0, "amount": 0.001, "enabled": True},
+    {"threshold_percent": -10.0, "amount": 0.0015, "enabled": True},
+    {"threshold_percent": -20.0, "amount": 0.002, "enabled": True},
 ]
 
 
@@ -197,7 +200,7 @@ class Config:
         template = {
             "trading_pair": "XXBTZUSD",
             "deposit_day": 1,
-            "crypto_amount": 0.0001,
+            "crypto_amount": 0.0005,
             "dip_threshold_percent": 5.0,
             "poll_interval_seconds": 600,
             "buy_hour": 8,

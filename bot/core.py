@@ -27,8 +27,13 @@ from bot.utils import APP_VERSION, add_months, atomic_write_json, now_tz, redact
 # Replace with actual fee from QueryOrders if/when that endpoint is integrated.
 KRAKEN_TAKER_FEE_RATE = 0.0026
 
-# Minimum crypto order size on Kraken for BTC pairs; used as a safe default.
-MIN_ORDER_CRYPTO_AMOUNT = 0.0001
+# Fallback minimum crypto order size for BTC pairs, used only when Kraken's
+# live pair metadata cannot be fetched. The effective floor is the pair's
+# ordermin from the public AssetPairs endpoint (0.00005 XBT for XXBTZEUR as
+# of 2026-10) — never a hardcoded guess. Demo mode keeps a tiny floor so the
+# dashboard can be tried out with toy amounts.
+MIN_ORDER_CRYPTO_AMOUNT = 0.00005
+MIN_ORDER_CRYPTO_AMOUNT_DEMO = 0.00001
 
 # Number of hours after a missed deposit day during which the bot will still buy
 # immediately instead of skipping to the next month. 48 hours is enough to catch
@@ -162,6 +167,28 @@ class KrakenDCA:
         if self.config.dynamic_dca_reference == "avg_buy":
             return avg_price if avg_price > 0 else last_price
         return last_price
+
+    def _minimum_order_amount(self) -> float:
+        """Effective minimum order size for the configured trading pair.
+
+        Prefers the pair's live ``ordermin`` from Kraken's public AssetPairs
+        endpoint over any hardcoded constant, so the floor always reflects
+        what the exchange actually enforces. Falls back to
+        MIN_ORDER_CRYPTO_AMOUNT on any failure (offline, demo fakes, unknown
+        pair); demo mode uses an intentionally tiny floor.
+        """
+        if is_demo_mode():
+            return MIN_ORDER_CRYPTO_AMOUNT_DEMO
+        try:
+            info = self.api.get_asset_pair_info(
+                self.config.trading_pair, timeout=10
+            )
+            ordermin = float(info["ordermin"])
+            if ordermin > 0:
+                return ordermin
+        except Exception:
+            pass
+        return MIN_ORDER_CRYPTO_AMOUNT
 
     def _match_tier(self, price_change_percent: float) -> Tuple[Optional[float], float]:
         """Return (threshold_percent, amount) of the first matching tier.
@@ -415,8 +442,13 @@ class KrakenDCA:
                 self._skip_buy(f"dynamic tier amount is 0 for current price {current_price:.2f}", strategy)
                 return
 
-            if buy_amount < MIN_ORDER_CRYPTO_AMOUNT:
-                self._skip_buy(f"resolved amount {buy_amount:.8f} is below minimum order size", strategy)
+            min_order = self._minimum_order_amount()
+            if buy_amount < min_order:
+                self._skip_buy(
+                    f"resolved amount {buy_amount:.8f} is below minimum order size "
+                    f"({min_order:.5f})",
+                    strategy,
+                )
                 return
 
             # Record which dynamic tier triggered (for display as "Dynamic -5%").

@@ -12,7 +12,7 @@ from typing import Any, cast
 import pytest
 
 from bot.config import Config
-from bot.core import KrakenDCA
+from bot.core import MIN_ORDER_CRYPTO_AMOUNT, KrakenDCA
 from bot.order_execution import OrderAttemptStore
 from bot.state import BotState, RuntimeOverrides
 from bot.store import TransactionStore
@@ -235,7 +235,7 @@ def _make_live_bot(
     config_data: dict[str, Any] = {
         "trading_pair": "XBTCHF",
         "deposit_day": 24,
-        "crypto_amount": 0.0001,
+        "crypto_amount": 0.001,
         "dip_threshold_percent": 5.0,
         "poll_interval_seconds": 300,
         "buy_hour": 8,
@@ -362,6 +362,20 @@ def test_scheduled_buy_never_exceeds_budget(tmp_path: Path, monkeypatch):
 
     assert bot.store.get_transaction_count("XBTCHF") == before
     assert any("exceed limit" in a for a in alerts)
+
+
+def test_minimum_order_amount_prefers_live_ordermin(tmp_path, monkeypatch):
+    bot = _make_live_bot(tmp_path, monkeypatch)
+    bot.api.get_asset_pair_info = lambda pair, timeout=30: {"ordermin": "0.00042"}  # type: ignore[attr-defined]
+
+    assert bot._minimum_order_amount() == 0.00042
+
+
+def test_minimum_order_amount_falls_back_when_pair_info_unavailable(tmp_path, monkeypatch):
+    bot = _make_live_bot(tmp_path, monkeypatch)
+    # _RichFakeAPI has no get_asset_pair_info: any failure must fall back to
+    # the constant floor instead of blocking the buy.
+    assert bot._minimum_order_amount() == MIN_ORDER_CRYPTO_AMOUNT
 
 
 if __name__ == "__main__":

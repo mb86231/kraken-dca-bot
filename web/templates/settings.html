@@ -40,6 +40,7 @@
       <label for="crypto_amount">Base Crypto Amount per Buy</label>
       <input type="number" step="0.00000001" id="crypto_amount" name="crypto_amount">
       <div class="form-hint">Used when dynamic DCA is off, and as the base/flat tier when on.</div>
+      <div class="form-hint" id="crypto-amount-value"></div>
     </div>
     <div class="form-group">
       <label for="dip_threshold_percent">Dip Threshold (%)</label>
@@ -95,14 +96,16 @@
     </div>
     <h3 style="font-size: 0.95rem; margin-bottom: 0.5rem;">Tiers</h3>
     <p class="muted" style="font-size: 0.85rem; margin-bottom: 0.5rem;">
-      Matched from top to bottom. <code>amount = 0</code> means skip the buy. Amounts are in the base crypto asset (e.g. BTC).
+      Matched from top to bottom. <code>amount = 0</code> means skip the buy. Amounts are in the base crypto asset (e.g. BTC); the <em>≈ Value</em> column shows what each buy is worth at the current price.
     </p>
+    <p class="muted" id="order-min-info" style="font-size: 0.85rem; margin-bottom: 0.5rem;"></p>
     <div class="table-wrap">
       <table id="dynamic-dca-tiers">
         <thead>
           <tr>
             <th>Threshold (%)</th>
             <th>Amount</th>
+            <th>≈ Value</th>
             <th>Enabled</th>
             <th>Example</th>
             <th></th>
@@ -306,23 +309,72 @@
 {% endblock %}
 {% block scripts %}
 <script>
+  // Mirrors DEFAULT_DYNAMIC_TIERS in bot/config.py: amounts sit comfortably
+  // above Kraken's ordermin (0.00005 XBT for BTC pairs).
   const DEFAULT_TIERS = [
     { threshold_percent: 10.0, amount: 0.0, enabled: true },
-    { threshold_percent: 5.0, amount: 0.00005, enabled: true },
-    { threshold_percent: -2.0, amount: 0.0001, enabled: true },
-    { threshold_percent: -5.0, amount: 0.00015, enabled: true },
-    { threshold_percent: -10.0, amount: 0.0002, enabled: true },
-    { threshold_percent: -20.0, amount: 0.0003, enabled: true },
+    { threshold_percent: 5.0, amount: 0.0005, enabled: true },
+    { threshold_percent: -2.0, amount: 0.00075, enabled: true },
+    { threshold_percent: -5.0, amount: 0.001, enabled: true },
+    { threshold_percent: -10.0, amount: 0.0015, enabled: true },
+    { threshold_percent: -20.0, amount: 0.002, enabled: true },
   ];
+
+  // Market context from /api/settings (quote currency, last price, Kraken
+  // order minimum) for the fiat value display on amounts.
+  let market = { quote_currency: '', last_price: null, order_min: null };
+
+  function formatFiat(amount) {
+    if (!market.last_price || !(amount > 0)) return '—';
+    const value = amount * market.last_price;
+    return '≈ ' + value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + market.quote_currency;
+  }
+
+  function isBelowMin(amount) {
+    return amount > 0 && market.order_min && amount < market.order_min;
+  }
+
+  function updateTierValue(row) {
+    const amount = parseFloat(row.querySelector('.tier-amount').value) || 0;
+    const cell = row.querySelector('.tier-value');
+    cell.textContent = amount > 0 ? formatFiat(amount) : '—';
+    const below = isBelowMin(amount);
+    cell.style.color = below ? 'var(--red)' : '';
+    cell.title = below ? 'Below Kraken minimum order size (' + market.order_min + ') — this buy would be skipped' : '';
+  }
+
+  function updateBaseAmountHint() {
+    const el = document.getElementById('crypto-amount-value');
+    const amount = parseFloat(document.getElementById('crypto_amount').value) || 0;
+    const below = isBelowMin(amount);
+    el.textContent = amount > 0
+      ? 'Current value: ' + formatFiat(amount) + (below ? ' — below Kraken minimum order size (' + market.order_min + ')!' : '')
+      : '';
+    el.style.color = below ? 'var(--red)' : '';
+  }
+
+  function updateOrderMinInfo() {
+    const el = document.getElementById('order-min-info');
+    if (!market.order_min) {
+      el.textContent = '';
+      return;
+    }
+    el.textContent = 'Kraken minimum order for this pair: ' + market.order_min +
+      ' (≈ ' + (market.last_price ? (market.order_min * market.last_price).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '?') +
+      ' ' + market.quote_currency + '). Amounts below that are skipped.';
+  }
 
   // Strategy settings
   async function loadSettings() {
     const data = await apiGet('/api/settings');
+    market = data.market || market;
+    updateOrderMinInfo();
     for (const [key, value] of Object.entries(data)) {
       if (key === 'dynamic_dca') {
         loadDynamicDCA(value || {});
         continue;
       }
+      if (key === 'market') continue;
       const el = document.getElementById(key);
       if (!el) continue;
       if (el.type === 'checkbox') {
@@ -337,6 +389,7 @@
         el.value = value;
       }
     }
+    updateBaseAmountHint();
   }
 
   function loadDynamicDCA(dd) {
@@ -360,13 +413,16 @@
     row.innerHTML = `
       <td><input type="number" step="0.1" class="tier-threshold" data-key="threshold_percent" value="${tier.threshold_percent}"></td>
       <td><input type="number" step="0.00000001" class="tier-amount" data-key="amount" value="${tier.amount}"></td>
-      <td><input type="checkbox" class="tier-enabled" data-key="enabled" ${tier.enabled ? 'checked' : ''}></td>
+      <td class="tier-value muted">—</td>
+      <td><input type="checkbox" class="tier-enabled" data-key="enabled" ${tier.enabled ? 'checked' : ''}"></td>
       <td class="muted">${tierExample(tier.threshold_percent)}</td>
       <td><button type="button" class="btn btn-small btn-danger remove-tier">Remove</button></td>
     `;
     row.querySelector('.remove-tier').addEventListener('click', () => {
       row.remove();
     });
+    row.querySelector('.tier-amount').addEventListener('input', () => updateTierValue(row));
+    updateTierValue(row);
     return row;
   }
 
@@ -398,8 +454,10 @@
 
   document.getElementById('add-tier').addEventListener('click', () => {
     const tbody = document.querySelector('#dynamic-dca-tiers tbody');
-    tbody.appendChild(createTierRow({ threshold_percent: 0.0, amount: 0.0001, enabled: true }));
+    tbody.appendChild(createTierRow({ threshold_percent: 0.0, amount: 0.0005, enabled: true }));
   });
+
+  document.getElementById('crypto_amount').addEventListener('input', updateBaseAmountHint);
 
   document.getElementById('reset-tiers').addEventListener('click', async () => {
     if (!(await uiConfirm('Reset tiers to the default set?', { title: 'Reset tiers', danger: false }))) return;

@@ -100,7 +100,9 @@ class DemoKrakenAPI:
     def get_balance(self) -> Dict[str, float]:
         return dict(self._balance)
 
-    def get_asset_pair_info(self, pair: str) -> Dict[str, Any]:
+    def get_asset_pair_info(
+        self, pair: str, timeout: float = 30
+    ) -> Dict[str, Any]:
         """Return synthetic pair metadata consistent with the Kraken public API."""
         return {
             "ordermin": "0.0001",

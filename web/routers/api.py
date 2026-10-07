@@ -739,12 +739,39 @@ def api_charts(
 @router.get("/settings")
 def api_settings(
     config: Config = Depends(get_config),
+    state: BotState = Depends(get_state),
     username: str = Depends(require_auth),
     _rate_limit=Depends(api_rate_limit),
 ):
     data = config.to_dict(mask_secrets=True)
     data["requires_restart"] = False  # UI hint; true for critical fields handled separately
+    data["market"] = _market_context(config, state)
     return data
+
+
+def _market_context(config: Config, state: BotState) -> dict[str, Any]:
+    """Quote currency, last known price and exchange order minimum.
+
+    Used by the settings page to show the fiat value of configured amounts
+    and to flag tiers below Kraken's minimum order size. Best-effort: any
+    failure (offline, demo mode, unknown pair) yields None, never an error.
+    """
+    context: dict[str, Any] = {
+        "quote_currency": (
+            _quote_currency(config.trading_pair) if config.trading_pair else ""
+        ),
+        "last_price": state.last_price,
+        "order_min": None,
+    }
+    if config.trading_pair and not is_demo_mode():
+        try:
+            info = KrakenAPI("", "").get_asset_pair_info(
+                config.trading_pair, timeout=5
+            )
+            context["order_min"] = float(info["ordermin"])
+        except Exception:
+            context["order_min"] = None
+    return context
 
 
 @router.put("/settings")

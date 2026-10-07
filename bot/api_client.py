@@ -55,6 +55,7 @@ class KrakenAPI:
         data: Optional[Dict] = None,
         private: bool = False,
         max_retries: int = 3,
+        timeout: float = 30,
     ) -> Dict:
         """Make API request to Kraken with automatic retry on transient failures.
 
@@ -98,7 +99,7 @@ class KrakenAPI:
                     req = urllib.request.Request(url, headers=headers)
 
             try:
-                with urllib.request.urlopen(req, timeout=30) as response:
+                with urllib.request.urlopen(req, timeout=timeout) as response:
                     result = json.loads(response.read().decode("utf-8"))
 
                     if result.get("error") and len(result["error"]) > 0:
@@ -186,13 +187,18 @@ class KrakenAPI:
                     break
         return data if data is not None else []
 
-    def get_asset_pair_info(self, pair: str) -> Dict[str, Any]:
+    def get_asset_pair_info(
+        self, pair: str, timeout: float = 30
+    ) -> Dict[str, Any]:
         """Return Kraken metadata for a trading pair.
 
         Uses the public ``AssetPairs`` endpoint so it does not consume the private
-        API rate-limit counter. Raises if the pair is unknown.
+        API rate-limit counter. Raises if the pair is unknown. ``timeout`` allows
+        dashboard call sites to fail fast when Kraken is unreachable.
         """
-        result = self._api_request("/0/public/AssetPairs", {"pair": pair})
+        result = self._api_request(
+            "/0/public/AssetPairs", {"pair": pair}, timeout=timeout
+        )
         if pair in result:
             return result[pair]
         # Kraken may return the pair under its canonical WS name (e.g. XBTUSD).

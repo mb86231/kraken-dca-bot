@@ -89,11 +89,11 @@ the price drops below your reference, smaller buys or a full skip when it rises.
     "cooldown_hours": 24.0,
     "tiers": [
       {"threshold_percent": 10.0, "amount": 0.0, "enabled": true},
-      {"threshold_percent": 5.0, "amount": 0.00005, "enabled": true},
-      {"threshold_percent": -2.0, "amount": 0.0001, "enabled": true},
-      {"threshold_percent": -5.0, "amount": 0.00015, "enabled": true},
-      {"threshold_percent": -10.0, "amount": 0.0002, "enabled": true},
-      {"threshold_percent": -20.0, "amount": 0.0003, "enabled": true}
+      {"threshold_percent": 5.0, "amount": 0.0005, "enabled": true},
+      {"threshold_percent": -2.0, "amount": 0.00075, "enabled": true},
+      {"threshold_percent": -5.0, "amount": 0.001, "enabled": true},
+      {"threshold_percent": -10.0, "amount": 0.0015, "enabled": true},
+      {"threshold_percent": -20.0, "amount": 0.002, "enabled": true}
     ]
   }
 }
@@ -119,17 +119,19 @@ the price drops below your reference, smaller buys or a full skip when it rises.
    base amount (`crypto_amount`).
 4. An amount of `0` skips the buy completely.
 
-With the default tiers above:
+With the default tiers above (amounts for BTC pairs; Kraken's ordermin is
+0.00005 XBT for XXBTZEUR, and the bot always enforces the live ordermin —
+scale the set proportionally for other assets or budgets):
 
 | Price vs reference | Buy amount | Why |
 |--------------------|-----------|-----|
 | ≥ +10 % | none | Buying deep into a rally is skipped |
-| +5 % … +10 % | 0.00005 | Half base — keep accumulating, but small |
-| −2 % … +5 % | 0.0001 (base) | Normal market conditions |
-| −5 % … −2 % | 0.00015 | Slightly cheaper than usual |
-| −10 % … −5 % | 0.0002 | Noticeable dip |
-| −20 % … −10 % | 0.0003 | Strong dip |
-| < −20 % | 0.0001 (base) | Below the table — no tier matched, fallback |
+| +5 % … +10 % | 0.0005 | Keep accumulating, but small |
+| −2 % … +5 % | 0.00075 | Normal market conditions |
+| −5 % … −2 % | 0.001 | Slightly cheaper than usual |
+| −10 % … −5 % | 0.0015 | Noticeable dip |
+| −20 % … −10 % | 0.002 | Strong dip |
+| < −20 % | 0.0005 (base) | Below the table — no tier matched, fallback |
 
 #### Where the tiers apply
 
