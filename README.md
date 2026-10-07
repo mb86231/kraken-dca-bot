@@ -57,7 +57,18 @@ To stop: `docker compose -f compose.public.yaml down`. Your data lives in the na
 
 > **No `.env` needed.** The admin account is created via the first-run setup, the session secret is generated and persisted automatically, and all other secrets are entered in the dashboard. Power users can still pre-seed everything via environment variables (see [`docs/configuration.md`](docs/configuration.md)).
 
-> **Access beyond localhost.** The quick-start binds to `127.0.0.1` only and serves plain HTTP — fine for a single machine. To reach the dashboard from other devices, put it behind an HTTPS reverse proxy (Caddy, nginx, Traefik), terminate TLS there, and set `WEB_UI_SECURE_COOKIE=true` so session cookies are marked Secure. Do not widen the port binding to plain HTTP on an untrusted network.
+> **Access beyond localhost.** The quick-start binds to `127.0.0.1` only and serves plain HTTP — fine for a single machine. To reach the dashboard from other devices, put it behind an HTTPS reverse proxy (Caddy, nginx, Traefik), terminate TLS there, and expose the container by setting the bind address **in `.env`** (next to the compose file):
+>
+> ```env
+> DCA_BOT_BIND=0.0.0.0
+> WEB_UI_SECURE_COOKIE=true
+> ```
+>
+> ```bash
+> docker compose -f compose.public.yaml up -d
+> ```
+>
+> Do not widen the port binding to plain HTTP on an untrusted network. And do **not** use a `compose.override.yaml` for the port: docker compose *merges* `ports` lists, so adding `8000:8000` there creates a second binding for the same host port and the container fails to start with a misleading `address already in use`. Use `DCA_BOT_BIND` instead — there is exactly one binding either way. Details: [`docs/WEB_DASHBOARD.md`](docs/WEB_DASHBOARD.md).
 
 ### Alternative: build from source
 

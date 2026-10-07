@@ -26,20 +26,26 @@ services:
       - WEB_UI_ENABLED=true
       - WEB_UI_PORT=8000
       # Quick start serves plain HTTP bound to localhost only. When exposing
-      # the dashboard beyond localhost, put it behind an HTTPS reverse proxy
-      # and set WEB_UI_SECURE_COOKIE=true.
-      - WEB_UI_SECURE_COOKIE=false
+      # the dashboard beyond localhost (DCA_BOT_BIND), terminate TLS at your
+      # reverse proxy and set WEB_UI_SECURE_COOKIE=true (in .env).
+      - "WEB_UI_SECURE_COOKIE=${WEB_UI_SECURE_COOKIE:-false}"
     volumes:
       - dca-bot-data:/app/data
       - dca-bot-backups:/app/backups
       - dca-bot-logs:/app/logs
     ports:
-      # Loopback-only: the dashboard is reachable from this machine only.
-      # To expose it on your LAN or the internet, front it with an HTTPS
-      # reverse proxy instead of widening this binding: put the widened port
-      # and WEB_UI_SECURE_COOKIE=true in a local compose.override.yaml (see
-      # docs/WEB_DASHBOARD.md -> "Public quick-start: exposing via reverse proxy").
-      - "127.0.0.1:8000:8000"
+      # Loopback-only by default: the dashboard is reachable from this
+      # machine only. To expose it on your LAN or the internet, put it
+      # behind an HTTPS reverse proxy and set the bind address via the
+      # DCA_BOT_BIND environment variable (in .env or your shell), e.g.
+      #   DCA_BOT_BIND=0.0.0.0
+      # together with WEB_UI_SECURE_COOKIE=true. Do NOT use a
+      # compose.override.yaml to widen this port: docker compose MERGES
+      # ports lists, so the override would create a second binding for the
+      # same host port and the container fails to start with a misleading
+      # "address already in use". See docs/WEB_DASHBOARD.md ->
+      # "Public quick-start: exposing via reverse proxy".
+      - "${DCA_BOT_BIND:-127.0.0.1}:8000:8000"
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

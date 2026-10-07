@@ -78,7 +78,20 @@ Enter the key in the dashboard (Settings → API Keys) or set `KRAKEN_API_KEY` /
 
 ## Optional: Reverse Proxy / HTTPS
 
-The dashboard listens on port 8000. For TLS, put it behind any reverse proxy (nginx, Traefik, Caddy). Example nginx config: [`docs/WEB_DASHBOARD.md`](docs/WEB_DASHBOARD.md). When serving over HTTPS, set `WEB_UI_SECURE_COOKIE=true`.
+The quick-start dashboard listens on port 8000, bound to `127.0.0.1` by
+default. To serve it behind any reverse proxy (nginx, NPM, Traefik, Caddy),
+set the bind address and the secure-cookie flag in `.env`:
+
+```env
+DCA_BOT_BIND=0.0.0.0
+WEB_UI_SECURE_COOKIE=true
+```
+
+then `docker compose -f compose.public.yaml up -d`. Do **not** widen the
+port via `compose.override.yaml` — compose merges `ports` lists, producing
+two bindings for the same host port and a misleading
+"address already in use" at startup. Example nginx config and background:
+[`docs/WEB_DASHBOARD.md`](docs/WEB_DASHBOARD.md).
 
 ## Optional: Single Sign-On (Authentik OIDC)
 
