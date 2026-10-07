@@ -75,6 +75,9 @@
     }
     data.transactions.forEach(t => {
       const tr = document.createElement('tr');
+      const strategyLabel = (t.strategy === 'dynamic' && t.dynamic_tier != null)
+        ? `dynamic ${t.dynamic_tier}%`
+        : t.strategy;
       tr.innerHTML = `
         <td>${formatDatetime(t.date)}</td>
         <td>${t.trading_pair}</td>
@@ -82,7 +85,7 @@
         <td>${formatCurrency(t.price)}</td>
         <td>${formatCurrency(t.fee)}</td>
         <td>${formatCurrency(t.total_cost)}</td>
-        <td><span class="badge ${t.strategy === 'dip' ? 'warn' : 'ok'}">${t.strategy}</span></td>
+        <td><span class="badge ${t.strategy === 'dip' ? 'warn' : 'ok'}">${strategyLabel}</span></td>
         <td>${t.order_id}</td>
         <td><span class="badge ${t.status === 'filled' ? 'ok' : 'error'}">${t.status}</span></td>
       `;

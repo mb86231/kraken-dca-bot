@@ -28,6 +28,9 @@ class Transaction:
     simulated: bool = False
     id: str = ""
     notes: str = ""
+    # For dynamic-DCA orders: the tier threshold (%) that matched when the
+    # order was placed, so the UI can show e.g. "Dynamic -5%".
+    dynamic_tier: float | None = None
 
     def __post_init__(self):
         if not self.id:
@@ -50,6 +53,7 @@ class Transaction:
             "simulated": False,
             "id": "",
             "notes": "",
+            "dynamic_tier": None,
         }
         for key, default in defaults.items():
             data.setdefault(key, default)
@@ -105,6 +109,7 @@ class TransactionStore:
         strategy: str = "scheduled",
         simulated: bool = False,
         notes: str = "",
+        dynamic_tier: float | None = None,
     ) -> Transaction:
         """Add a new transaction and persist.
 
@@ -128,6 +133,7 @@ class TransactionStore:
             strategy=strategy,
             simulated=simulated,
             notes=notes,
+            dynamic_tier=dynamic_tier,
         )
 
         def _append(data):

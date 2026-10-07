@@ -163,6 +163,23 @@ class KrakenDCA:
             return avg_price if avg_price > 0 else last_price
         return last_price
 
+    def _match_tier(self, price_change_percent: float) -> Tuple[Optional[float], float]:
+        """Return (threshold_percent, amount) of the first matching tier.
+
+        ``threshold_percent`` is None when no tier matched and the base amount
+        is used as fallback.
+        """
+        for tier in sorted(
+            self.config.dynamic_dca_tiers,
+            key=lambda t: t.threshold_percent,
+            reverse=True,
+        ):
+            if not tier.enabled:
+                continue
+            if price_change_percent >= tier.threshold_percent:
+                return tier.threshold_percent, tier.amount
+        return None, self.config.crypto_amount
+
     def resolve_buy_amount(self, current_price: float) -> float:
         """Return the crypto amount to buy for the current market conditions.
 
@@ -179,21 +196,8 @@ class KrakenDCA:
             return self.config.crypto_amount
 
         price_change_percent = (current_price - reference_price) / reference_price * 100.0
-
-        # Match from the highest threshold down so the first match is the most
-        # specific applicable tier.
-        for tier in sorted(
-            self.config.dynamic_dca_tiers,
-            key=lambda t: t.threshold_percent,
-            reverse=True,
-        ):
-            if not tier.enabled:
-                continue
-            if price_change_percent >= tier.threshold_percent:
-                return tier.amount
-
-        # Fallback to the base amount if no tier matched.
-        return self.config.crypto_amount
+        _, amount = self._match_tier(price_change_percent)
+        return amount
 
     def _last_buy_time(self) -> Optional[datetime]:
         """Return the timestamp of the most recent transaction, if any."""
@@ -384,6 +388,15 @@ class KrakenDCA:
                 print(f"{Colors.YELLOW}⚠ Buy skipped: resolved amount {buy_amount:.8f} is below minimum order size{Colors.RESET}")
                 return
 
+            # Record which dynamic tier triggered (for display as "Dynamic -5%").
+            dynamic_tier: Optional[float] = None
+            if strategy == "dynamic" and self.config.dynamic_dca_enabled:
+                reference_price = self.get_reference_price()
+                if reference_price > 0:
+                    change = (current_price - reference_price) / reference_price * 100.0
+                    tier_threshold, _ = self._match_tier(change)
+                    dynamic_tier = tier_threshold
+
             if self.config.max_monthly_amount is not None:
                 monthly_spent = self.store.get_monthly_spent(self.config.trading_pair, self.config.deposit_day, self.config.buy_hour)
                 buy_cost = buy_amount * current_price
@@ -418,6 +431,7 @@ class KrakenDCA:
                     strategy=strategy,
                     simulated=True,
                     notes="Dry-run buy",
+                    dynamic_tier=dynamic_tier,
                 )
                 self._mark_cycle_executed(cycle_time, strategy)
                 self.display_statistics(current_price)
@@ -443,6 +457,7 @@ class KrakenDCA:
                 strategy=strategy,
                 simulated=False,
                 cycle_time=cycle_time,
+                dynamic_tier=dynamic_tier,
                 on_confirmed=_on_confirmed,
             )
 

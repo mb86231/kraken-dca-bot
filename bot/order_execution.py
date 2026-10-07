@@ -119,6 +119,7 @@ class OrderAttempt:
     reconcile_count: int = 0
     final_outcome: str | None = None
     acknowledged: bool = False
+    dynamic_tier: float | None = None
     created_at: str = field(default_factory=lambda: utc_now().isoformat())
     updated_at: str = field(default_factory=lambda: utc_now().isoformat())
     notes: str | None = None
@@ -232,6 +233,7 @@ class OrderExecutor:
         strategy: str = "scheduled",
         simulated: bool = True,
         cycle_time: datetime | None = None,
+        dynamic_tier: float | None = None,
         on_confirmed: Callable[[OrderAttempt], None] | None = None,
     ) -> OrderAttempt:
         """Submit a single buy attempt.
@@ -258,6 +260,7 @@ class OrderExecutor:
             simulated=simulated,
             attempt_number=attempt_number,
             userref=userref,
+            dynamic_tier=dynamic_tier,
         )
         self.attempt_store.save(attempt)
         return self._execute(attempt, on_confirmed=on_confirmed)
@@ -571,6 +574,7 @@ class OrderExecutor:
             strategy=attempt.strategy,
             simulated=attempt.simulated,
             notes=f"Order attempt {attempt.attempt_id}",
+            dynamic_tier=attempt.dynamic_tier,
         )
         attempt.state = OrderState.CONFIRMED.value
         attempt.final_outcome = "confirmed"
@@ -598,6 +602,7 @@ class OrderExecutor:
             strategy=attempt.strategy,
             simulated=attempt.simulated,
             notes=f"Reconciled / {reason} ({attempt.attempt_id})",
+            dynamic_tier=attempt.dynamic_tier,
         )
         attempt.state = OrderState.CONFIRMED.value
         attempt.final_outcome = f"confirmed via {reason}"

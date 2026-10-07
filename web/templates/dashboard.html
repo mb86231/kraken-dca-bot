@@ -80,7 +80,9 @@
       data.transactions.forEach(t => {
         const li = document.createElement('li');
         const time = t.date ? new Date(t.date).toLocaleString() : '—';
-        const strategy = t.strategy || 'scheduled';
+        const strategy = (t.strategy === 'dynamic' && t.dynamic_tier != null)
+          ? `dynamic ${t.dynamic_tier}%`
+          : (t.strategy || 'scheduled');
         const simulated = t.simulated ? ' (sim)' : '';
         li.innerHTML = `<strong>${time}</strong> ${t.trading_pair} — ${formatCrypto(t.amount)} @ ${formatCurrency(t.price)}${simulated} <span class="badge ${strategy === 'dip' ? 'warn' : 'ok'}">${strategy}</span>`;
         list.appendChild(li);

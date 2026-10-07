@@ -154,3 +154,96 @@ def test_dynamic_dca_to_dict_includes_block(dynamic_config: Config):
     assert data["dynamic_dca"]["enabled"] is True
     assert data["dynamic_dca"]["reference"] == "last_buy"
     assert len(data["dynamic_dca"]["tiers"]) == 6
+
+
+class TestMatchTier:
+    """Unit tests for KrakenDCA._match_tier()."""
+
+    @pytest.fixture
+    def bot(self, dynamic_config: Config, tmp_path: Path):
+        store = TransactionStore(filepath=tmp_path / "transactions.json")
+        state = BotState(filepath=tmp_path / "state.json", persist=False)
+        bot = KrakenDCA(config=dynamic_config, store=store, state=state)
+        bot.store.clear()
+        return bot
+
+    def test_returns_threshold_and_amount(self, bot: KrakenDCA):
+        assert bot._match_tier(-5.0) == (-5.0, 0.00015)
+        assert bot._match_tier(-20.0) == (-20.0, 0.0003)
+        assert bot._match_tier(10.0) == (10.0, 0.0)
+
+    def test_fallback_returns_none_threshold(self, bot: KrakenDCA):
+        # Below the lowest tier: falls back to base amount, no tier matched.
+        threshold, amount = bot._match_tier(-30.0)
+        assert threshold is None
+        assert amount == bot.config.crypto_amount
+
+    def test_disabled_tier_skipped(self, bot: KrakenDCA):
+        for tier in bot.config.dynamic_dca_tiers:
+            if tier.threshold_percent == 5.0:
+                tier.enabled = False
+        # +7% falls through the disabled +5% tier to the -2% tier.
+        assert bot._match_tier(7.0) == (-2.0, 0.0001)
+
+
+class TestDynamicTierRecordedOnOrder:
+    """Dynamic orders must carry the matched tier for display (Dynamic -5%)."""
+
+    @pytest.fixture
+    def bot(self, dynamic_config: Config, tmp_path: Path, monkeypatch):
+        store = TransactionStore(filepath=tmp_path / "transactions.json")
+        state = BotState(filepath=tmp_path / "state.json", persist=False)
+        bot = KrakenDCA(config=dynamic_config, store=store, state=state)
+        bot.store.clear()
+        monkeypatch.setattr(bot.api, "get_ticker", lambda pair: 47500.0)
+        return bot
+
+    def test_dynamic_buy_records_matched_tier(self, bot: KrakenDCA):
+        # Reference (last buy) at 50'000; current 47'500 -> -5% tier.
+        bot.store.add_transaction("XBTCHF", 0.0001, 50000.0, strategy="scheduled")
+        bot.execute_buy(strategy="dynamic")
+        txn = bot.store.get_transactions("XBTCHF")[-1]
+        assert txn.strategy == "dynamic"
+        assert txn.dynamic_tier == -5.0
+
+    def test_scheduled_buy_has_no_tier(self, bot: KrakenDCA):
+        bot.store.add_transaction("XBTCHF", 0.0001, 50000.0, strategy="scheduled")
+        bot.execute_buy(strategy="scheduled")
+        txn = bot.store.get_transactions("XBTCHF")[-1]
+        assert txn.strategy == "scheduled"
+        assert txn.dynamic_tier is None
+
+    def test_dynamic_buy_fallback_tier_is_none(self, bot: KrakenDCA):
+        # Price far below the lowest tier: amount falls back to base and no
+        # tier label is recorded.
+        bot.store.add_transaction("XBTCHF", 0.0001, 100000.0, strategy="scheduled")
+        # 47'500 vs reference 100'000 is -52.5%: below the -20% tier.
+        bot.execute_buy(strategy="dynamic")
+        txn = bot.store.get_transactions("XBTCHF")[-1]
+        assert txn.dynamic_tier is None
+
+
+class TestTransactionDynamicTierPersistence:
+    """dynamic_tier must round-trip through serialization."""
+
+    def test_to_from_dict_preserves_tier(self, tmp_path: Path):
+        store = TransactionStore(filepath=tmp_path / "transactions.json")
+        txn = store.add_transaction("XBTCHF", 0.00015, 47500.0, strategy="dynamic", dynamic_tier=-5.0)
+        assert txn.dynamic_tier == -5.0
+
+        reloaded = TransactionStore(filepath=tmp_path / "transactions.json")
+        assert reloaded.transactions[-1].dynamic_tier == -5.0
+
+    def test_legacy_records_default_to_none(self, tmp_path: Path):
+        from bot.store import Transaction
+
+        txn = Transaction.from_dict(
+            {
+                "date": "2026-10-01T00:00:00+00:00",
+                "trading_pair": "XBTCHF",
+                "amount": 0.0001,
+                "price": 50000.0,
+            }
+        )
+        assert txn.dynamic_tier is None
+
