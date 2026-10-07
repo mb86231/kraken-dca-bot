@@ -36,7 +36,9 @@ services:
     ports:
       # Loopback-only: the dashboard is reachable from this machine only.
       # To expose it on your LAN or the internet, front it with an HTTPS
-      # reverse proxy instead of widening this binding.
+      # reverse proxy instead of widening this binding: put the widened port
+      # and WEB_UI_SECURE_COOKIE=true in a local compose.override.yaml (see
+      # docs/WEB_DASHBOARD.md -> "Public quick-start: exposing via reverse proxy").
       - "127.0.0.1:8000:8000"
     restart: unless-stopped
     security_opt:

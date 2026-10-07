@@ -171,6 +171,36 @@ Then recreate the container:
 docker compose up -d --force-recreate
 ```
 
+### Public quick-start: exposing via reverse proxy
+
+`compose.public.yaml` publishes the dashboard on **loopback only**
+(`127.0.0.1:8000:8000`) so an out-of-the-box install is never exposed to the
+network unencrypted. To put it behind your own reverse proxy (Nginx,
+Nginx Proxy Manager, Caddy, Traefik, …), do **not** edit
+`compose.public.yaml` — docker compose automatically merges a local
+`compose.override.yaml` next to it:
+
+```yaml
+# compose.override.yaml — local only, never commit this
+services:
+  dca-bot:
+    ports:
+      - "8000:8000"                  # listen on all interfaces (LAN/VLAN)
+    environment:
+      - WEB_UI_SECURE_COOKIE=true   # session cookie marked Secure behind proxy TLS
+```
+
+```bash
+docker compose -f compose.public.yaml up -d
+```
+
+Point the proxy at `http://<bot-host-ip>:8000` and terminate TLS there.
+With `WEB_UI_SECURE_COOKIE=true` logins only work through the HTTPS proxy
+address, which is what you want — direct `http://<ip>:8000` access no
+longer authenticates. If you intentionally want plain HTTP on a trusted
+network *without* a proxy, use `WEB_UI_SECURE_COOKIE=false` in the override
+instead.
+
 ### Localhost-only / SSH tunnel
 
 If you do not need remote access, keep:
