@@ -132,6 +132,7 @@ Open http://127.0.0.1:8000 and sign in with `demo-password`. Demo mode cannot pl
 
 ## Further Reading
 
+- Step-by-step walkthrough (localhost / LAN IP / reverse proxy): [`docs/INSTALLATION.md`](docs/INSTALLATION.md)
 - Environment variable reference: [`docs/configuration.md`](docs/configuration.md)
 - Dashboard & reverse proxy: [`docs/WEB_DASHBOARD.md`](docs/WEB_DASHBOARD.md)
 - Secret management: [`docs/secrets.md`](docs/secrets.md)

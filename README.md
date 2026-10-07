@@ -103,6 +103,7 @@ See [`INSTALL.md`](INSTALL.md) for the full installation guide and [`docs/config
 | Document | Purpose |
 |----------|---------|
 | [`INSTALL.md`](INSTALL.md) | Full installation guide |
+| [`docs/INSTALLATION.md`](docs/INSTALLATION.md) | Step-by-step walkthrough: localhost-only, LAN/IP, or behind a reverse proxy |
 | [`docs/configuration.md`](docs/configuration.md) | Complete `config.json` and environment-variable reference |
 | [`docs/WEB_DASHBOARD.md`](docs/WEB_DASHBOARD.md) | Dashboard setup, reverse proxy, HTTPS |
 | [`docs/TELEGRAM.md`](docs/TELEGRAM.md) | Telegram notifications and the interactive command bot |
