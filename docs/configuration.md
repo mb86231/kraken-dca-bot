@@ -78,6 +78,9 @@ The bot uses two separate sources of configuration:
 
 ### Dynamic DCA tiers
 
+Dynamic DCA scales the size of every buy with the price trend: bigger buys when
+the price drops below your reference, smaller buys or a full skip when it rises.
+
 ```json
 {
   "dynamic_dca": {
@@ -97,10 +100,52 @@ The bot uses two separate sources of configuration:
 ```
 
 - `enabled`: turn dynamic tiers on or off.
-- `reference`: `"last_buy"` or `"avg_buy"` — price used to compute the drawdown.
-- `cooldown_hours`: minimum hours between dynamic buys.
-- `tiers`: each tier has a `threshold_percent` (price change from reference) and
-  an `amount` to buy when that threshold is reached. `amount: 0` means skip.
+- `reference`: `"last_buy"` or `"avg_buy"` — the price the current price is
+  compared against. `"last_buy"` reacts quickly to recent dips; `"avg_buy"`
+  smooths over your whole purchase history.
+- `cooldown_hours`: minimum hours between dynamic buys. Counted from your last
+  buy of any strategy, so a scheduled buy also starts the cooldown.
+- `tiers`: each tier has a `threshold_percent` (price change from reference)
+  and an `amount` to buy when that threshold is reached. `amount: 0` means
+  skip the buy entirely.
+
+#### How a buy amount is resolved
+
+1. Compute the price change: `(current_price - reference) / reference * 100`.
+2. Sort the enabled tiers by `threshold_percent`, highest first, and pick the
+   **first** tier whose threshold is at or below the price change. Matching
+   stops there — tier amounts are **not** summed.
+3. If the price change is below the lowest tier's threshold, fall back to the
+   base amount (`crypto_amount`).
+4. An amount of `0` skips the buy completely.
+
+With the default tiers above:
+
+| Price vs reference | Buy amount | Why |
+|--------------------|-----------|-----|
+| ≥ +10 % | none | Buying deep into a rally is skipped |
+| +5 % … +10 % | 0.00005 | Half base — keep accumulating, but small |
+| −2 % … +5 % | 0.0001 (base) | Normal market conditions |
+| −5 % … −2 % | 0.00015 | Slightly cheaper than usual |
+| −10 % … −5 % | 0.0002 | Noticeable dip |
+| −20 % … −10 % | 0.0003 | Strong dip |
+| < −20 % | 0.0001 (base) | Below the table — no tier matched, fallback |
+
+#### Where the tiers apply
+
+- **Scheduled buys** (deposit day): the resolved tier amount is used, so a
+  scheduled buy is reduced or skipped too when the market ran up.
+- **Dynamic extra buys**: on every poll, if the resolved amount is *larger*
+  than the base amount and the cooldown has passed, the bot buys immediately
+  and recalculates the remaining schedule. Since v1.1.5 these orders are
+  labelled with the tier that fired (e.g. `dynamic -5 %`).
+- **Manual "Buy Now"**: also uses the resolved tier amount.
+- **Budget and limits still apply**: the monthly budget is checked against the
+  resolved tier amount (not the base amount), and `max_price` can still skip
+  the buy.
+
+The legacy fixed-percentage dip buy (`dip_threshold_percent`) is disabled
+while dynamic DCA is enabled — the tier table replaces it.
 
 ### Validation
 

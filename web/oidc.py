@@ -11,7 +11,7 @@ import base64
 import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 from urllib.parse import urlencode, urljoin
 
 import httpx
@@ -290,13 +290,16 @@ class OIDCProvider:
                 algorithms=self.SUPPORTED_ALGORITHMS,
                 issuer=self.issuer_url,
                 audience=self.client_id,
-                options={
-                    "verify_exp": True,
-                    "verify_iat": True,
-                    "verify_nbf": True,
-                    "require_exp": True,
-                    "require_iat": True,
-                },
+                options=cast(
+                    Any,
+                    {
+                        "verify_exp": True,
+                        "verify_iat": True,
+                        "verify_nbf": True,
+                        "require_exp": True,
+                        "require_iat": True,
+                    },
+                ),
             )
         except jwt.PyJWTError as exc:
             raise HTTPException(
