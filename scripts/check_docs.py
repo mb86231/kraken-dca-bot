@@ -27,7 +27,10 @@ def anchor_slug(text: str) -> str:
     text = text.strip().lstrip("#").strip()
     text = text.lower()
     text = re.sub(r"[^\w\s-]", "", text)
-    text = re.sub(r"[\s_]+", "-", text).strip("-")
+    # Match github-slugger: one hyphen per whitespace character, no
+    # collapsing. "Teil A — B" becomes "teil-a--b" (double hyphen), not
+    # "teil-a-b".
+    text = re.sub(r"\s", "-", text).strip("-")
     return text
 
 

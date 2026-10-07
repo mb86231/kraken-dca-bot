@@ -380,7 +380,7 @@ Example recurring-mode configuration:
 
 - `.pre-commit-config.yaml` runs `detect-secrets` and blocks committed `.env` files or `api_key`/`api_secret` in `config.json`.
 - The CI pipeline runs `detect-secrets scan --baseline .secrets.baseline --all-files` inside the test container.
-- `.secrets.baseline` is checked in and must be updated when new false positives are approved. See [Git & Secrets Management](#11-git-secrets-management) for how to maintain it.
+- `.secrets.baseline` is checked in and must be updated when new false positives are approved. See [Git & Secrets Management](#11-git--secrets-management) for how to maintain it.
 
 ---
 
