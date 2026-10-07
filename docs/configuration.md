@@ -238,6 +238,26 @@ Copy `.env.example` to `.env` and fill in real values. `.env` is in
 | `ORDER_UNKNOWN_HOLD_SECONDS` | `1800` | Max time an unknown order stays reconciling before HOLD. |
 | `ORDER_RECONCILE_INTERVAL_SECONDS` | `30` | Minimum seconds between reconciliation queries. |
 | `PREFLIGHT_FEE_BUFFER_PERCENT` | `0.5` | Extra safety margin used by the optional preflight script. |
+| `TELEGRAM_ALLOWED_CHAT_IDS` | `123456,-789` | Comma-separated chat IDs allowed to send Telegram commands. Defaults to `TELEGRAM_CHAT_ID`. |
+| `TELEGRAM_COMMANDS_ENABLED` | `true` / `false` | Master switch for the interactive Telegram command bot. |
+
+### Telegram command bot
+
+Besides one-way notifications, the bot can receive commands via long polling
+(outbound HTTPS only — no port is exposed). Commands: `/status`, `/price`,
+`/budget`, `/last [n]`, `/alerts`, `/buy`, `/pause`, `/resume`, `/help`.
+See [docs/TELEGRAM.md](TELEGRAM.md) for the full guide: setup, command
+reference, security model, multiple operators, and troubleshooting.
+
+Security properties:
+
+- Only chat IDs in `TELEGRAM_ALLOWED_CHAT_IDS` (or the notification chat ID)
+  are served; unknown chats are silently ignored.
+- `/buy`, `/pause`, and `/resume` require a one-time inline confirmation that
+  expires after 60 seconds and cannot be replayed.
+- Per-chat rate limiting (2 s between commands, 20/minute).
+- Every command and executed action is written to the audit log.
+- Secrets are never accepted or printed by any command.
 | `ORDER_FEE_BUFFER_PERCENT` | `0.5` | Extra safety margin applied by the order executor before placing a live order. |
 | `IMAGE_NAME` | `<REGISTRY_HOST>/.../crypto-agent` | Container image name for CI. |
 | `IMAGE_TAG` | `<git-sha>` | Container image tag for CI. |

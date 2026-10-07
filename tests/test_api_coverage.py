@@ -324,6 +324,18 @@ def test_api_bot_cycle_when_paused(auth_client: TestClient):
     assert response.status_code == 409
 
 
+def test_api_bot_cycle_over_budget(auth_client: TestClient):
+    app.state.bot_state.status = "waiting"
+    app.state.bot_state.paused = False
+    app.state.overrides.set_paused(False)
+    response = auth_client.post("/api/bot/cycle", json={"over_budget": True})
+    assert response.status_code == 200
+    assert "over monthly budget" in response.json()["message"]
+    assert app.state.overrides.manual_buy_over_budget is True
+    app.state.overrides.clear_manual_cycle()
+    app.state.overrides.clear_over_budget()
+
+
 def test_api_restore_settings_missing_backup(auth_client: TestClient, temp_dir: Path):
     config_path = app.state.config.config_path
     backup_path = config_path.with_suffix(".json.bak")

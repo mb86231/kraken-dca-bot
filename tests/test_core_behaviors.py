@@ -298,5 +298,71 @@ def test_execute_buy_live_submits_order_without_preflight(
     assert bot.store.get_transaction_count(bot.config.trading_pair) == 1
 
 
+# -----------------------------------------------------------------------------
+# Budget guard: skipped buys must be visible, manual buys may exceed once
+# -----------------------------------------------------------------------------
+
+
+class _FakeNotifier:
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+        self.enabled = True
+
+    def send(self, message: str) -> None:
+        self.messages.append(message)
+
+
+def _capture_alerts(monkeypatch) -> list[str]:
+    alerts: list[str] = []
+    monkeypatch.setattr(
+        "bot.core.create_alert",
+        lambda message, severity="warning", source="bot": alerts.append(message),
+    )
+    return alerts
+
+
+def test_manual_buy_over_budget_skipped_with_feedback(tmp_path: Path, monkeypatch):
+    bot = _make_bot(tmp_path, monkeypatch, max_monthly_amount=1.0)
+    alerts = _capture_alerts(monkeypatch)
+    notifier = _FakeNotifier()
+    bot.notifier = cast(Any, notifier)
+    before = bot.store.get_transaction_count("XBTCHF")
+
+    bot.execute_buy(strategy="manual")
+
+    assert bot.store.get_transaction_count("XBTCHF") == before  # nothing bought
+    assert any("exceed limit" in a for a in alerts)  # visible in the dashboard
+    assert any("skipped" in m for m in notifier.messages)  # pushed to Telegram
+
+
+def test_manual_buy_over_budget_allowed_with_one_shot_override(tmp_path: Path, monkeypatch):
+    bot = _make_bot(tmp_path, monkeypatch, max_monthly_amount=1.0)
+    alerts = _capture_alerts(monkeypatch)
+    notifier = _FakeNotifier()
+    bot.notifier = cast(Any, notifier)
+    before = bot.store.get_transaction_count("XBTCHF")
+
+    bot.overrides.request_manual_cycle(over_budget=True)
+    bot.execute_buy(strategy="manual")
+
+    assert bot.store.get_transaction_count("XBTCHF") == before + 1  # buy happened
+    assert not alerts  # no skip alert
+    assert not any("skipped" in m for m in notifier.messages)
+    assert bot.overrides.manual_buy_over_budget is False  # one-shot: consumed
+
+
+def test_scheduled_buy_never_exceeds_budget(tmp_path: Path, monkeypatch):
+    # The one-shot override only applies to operator-approved manual buys.
+    bot = _make_bot(tmp_path, monkeypatch, max_monthly_amount=1.0)
+    alerts = _capture_alerts(monkeypatch)
+    before = bot.store.get_transaction_count("XBTCHF")
+
+    bot.overrides.request_manual_cycle(over_budget=True)
+    bot.execute_buy(strategy="scheduled")
+
+    assert bot.store.get_transaction_count("XBTCHF") == before
+    assert any("exceed limit" in a for a in alerts)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

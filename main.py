@@ -61,11 +61,25 @@ def main() -> int:
         except Exception as e:
             print(f"{Colors.YELLOW}Warning: Could not start web dashboard: {e}{Colors.RESET}")
 
+    # Optional interactive Telegram command bot (long-polling, no inbound ports).
+    # Disable with TELEGRAM_COMMANDS_ENABLED=false.
+    try:
+        from bot.telegram_commands import TelegramCommandBot
+
+        telegram_bot = TelegramCommandBot(app)
+        telegram_bot.start()
+    except Exception as e:
+        telegram_bot = None
+        print(f"{Colors.YELLOW}Warning: Could not start Telegram command bot: {e}{Colors.RESET}")
+
     try:
         app.run()
     except Exception as e:
         print(f"{Colors.RED}Fatal Error: {str(e)}{Colors.RESET}")
         return 1
+    finally:
+        if telegram_bot is not None:
+            telegram_bot.stop()
     return 0
 
 

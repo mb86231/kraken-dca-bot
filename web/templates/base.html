@@ -49,7 +49,7 @@
       <header class="topbar">
         <h1 class="page-title">{% block page_title %}Dashboard{% endblock %}</h1>
         <div class="topbar-controls">
-          <button class="btn btn-small btn-primary" data-action="/api/bot/cycle" data-confirm="Trigger a one-time buy now? This will place an order according to your strategy.">Buy Now</button>
+          <button class="btn btn-small btn-primary" id="buy-now-btn">Buy Now</button>
           <button class="btn btn-small btn-secondary" id="pause-toggle-btn" data-action="/api/bot/pause">Pause</button>
           <button class="btn btn-small btn-secondary" id="live-trading-toggle-btn" title="Toggle live trading">Live: …</button>
         </div>

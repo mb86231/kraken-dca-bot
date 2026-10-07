@@ -129,16 +129,14 @@ def index(request: Request, username: str = Depends(require_auth)):
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
     first_run_setup.ensure_token()
-    # Generate the CSRF token BEFORE rendering so the form carries the same
-    # value that is written to the response cookie. (Rendering first and then
-    # setting a fresh cookie leaves first-time visitors with an empty form
-    # token that fails validation on submit.)
-    csrf_token = auth_manager.generate_csrf_token()
+    # Reuse an existing CSRF cookie: rendering a fresh token on every page load
+    # would rotate the cookie and invalidate forms that are already open in the
+    # browser (403 "CSRF token invalid" on submit). Rotation still happens on
+    # login/logout and after setup.
+    csrf_token = request.cookies.get(auth_manager.CSRF_COOKIE) or auth_manager.generate_csrf_token()
     response = templates.TemplateResponse(
         request, "login.html", {"request": request, "error": None, "oidc_enabled": auth_manager.oidc_enabled, "setup_required": first_run_setup.required(), "csrf_token": csrf_token}
     )
-    # Issue a CSRF token for the login form. The token is rotated after a
-    # successful login, so a pre-login token cannot be replayed post-auth.
     auth_manager.set_csrf_cookie(response, csrf_token)
     return response
 
@@ -462,7 +460,8 @@ def _page_response(request: Request, page_name: str, username: str):
     }
     if page_name not in allowed:
         return templates.TemplateResponse(request, "404.html", {"request": request, "page": page_name}, status_code=404)
-    csrf_token = auth_manager.generate_csrf_token()
+    # Reuse the existing CSRF cookie if present; see login_page for why.
+    csrf_token = request.cookies.get(auth_manager.CSRF_COOKIE) or auth_manager.generate_csrf_token()
     response = templates.TemplateResponse(
         request,
         f"{page_name}.html",
@@ -473,7 +472,7 @@ def _page_response(request: Request, page_name: str, username: str):
             "page": page_name,
         },
     )
-    auth_manager.set_csrf_cookie(response)
+    auth_manager.set_csrf_cookie(response, csrf_token)
     return response
 
 

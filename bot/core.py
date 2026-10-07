@@ -343,6 +343,19 @@ class KrakenDCA:
 
         return next_buy_time, hours_between_buys, int(remaining_hours), max(1, max_buys)
 
+    def _skip_buy(self, reason: str, strategy: str) -> None:
+        """Record and surface a buy that was deliberately NOT executed.
+
+        A skipped buy used to be console-only, which looked identical to a
+        successful one from the dashboard. Now every skip creates an alert
+        (bell icon + alerts page) and, for manual requests, a Telegram note.
+        """
+        message = f"⚠ Buy skipped ({strategy}): {reason}"
+        print(f"{Colors.YELLOW}{message}{Colors.RESET}")
+        create_alert(message, "warning")
+        if strategy == "manual":
+            self.notifier.send(f"⚠️ Buy request skipped\n{reason}")
+
     def execute_buy(self, strategy: str = "scheduled", cycle_time: Optional[datetime] = None):
         """Execute a buy order via the idempotent order executor.
 
@@ -356,10 +369,17 @@ class KrakenDCA:
         full order-attempt state machine.
         """
         try:
+            # Consume the one-shot budget override approved via the dashboard or
+            # Telegram confirmation dialog (manual buys only).
+            over_budget_override = False
+            if strategy == "manual":
+                over_budget_override = self.overrides.manual_buy_over_budget
+                self.overrides.clear_over_budget()
+
             if self.config.mode == "lump_sum":
                 end_date = self._require_end_date()
                 if now_tz() >= end_date:
-                    print(f"{Colors.YELLOW}⚠ Buy skipped: DCA end date {end_date.strftime('%Y-%m-%d')} has been reached{Colors.RESET}")
+                    self._skip_buy(f"DCA end date {end_date.strftime('%Y-%m-%d')} has been reached", strategy)
                     return
 
             # Get current price
@@ -368,24 +388,35 @@ class KrakenDCA:
 
             effective_max_price = self.overrides.temporary_max_price or self.config.max_price
             if effective_max_price is not None and current_price > effective_max_price:
-                print(f"{Colors.YELLOW}⚠ Buy skipped: price {current_price:.2f} is above max_price {effective_max_price:.2f}{Colors.RESET}")
+                self._skip_buy(f"price {current_price:.2f} is above max_price {effective_max_price:.2f}", strategy)
                 return
 
-            if self.config.max_monthly_amount is not None:
+            budget_overridden = (
+                over_budget_override and self.config.max_monthly_amount is not None
+            )
+            if budget_overridden:
+                print(f"{Colors.CYAN}Manual buy approved over monthly budget (one-time override).{Colors.RESET}")
+
+            if self.config.max_monthly_amount is not None and not budget_overridden:
                 monthly_spent = self.store.get_monthly_spent(self.config.trading_pair, self.config.deposit_day, self.config.buy_hour)
                 buy_cost = self.config.crypto_amount * current_price
                 if monthly_spent + buy_cost > self.config.max_monthly_amount:
-                    print(f"{Colors.YELLOW}⚠ Buy skipped: monthly spend {monthly_spent:.2f} + {buy_cost:.2f} would exceed limit {self.config.max_monthly_amount:.2f}{Colors.RESET}")
+                    self._skip_buy(
+                        f"monthly spend {monthly_spent:.2f} + {buy_cost:.2f} would exceed limit "
+                        f"{self.config.max_monthly_amount:.2f} — use Buy Now again and confirm "
+                        f"'buy anyway' to exceed the budget once",
+                        strategy,
+                    )
                     return
 
             buy_amount = self.resolve_buy_amount(current_price)
 
             if buy_amount <= 0:
-                print(f"{Colors.YELLOW}⚠ Buy skipped: dynamic tier amount is 0 for current price {current_price:.2f}{Colors.RESET}")
+                self._skip_buy(f"dynamic tier amount is 0 for current price {current_price:.2f}", strategy)
                 return
 
             if buy_amount < MIN_ORDER_CRYPTO_AMOUNT:
-                print(f"{Colors.YELLOW}⚠ Buy skipped: resolved amount {buy_amount:.8f} is below minimum order size{Colors.RESET}")
+                self._skip_buy(f"resolved amount {buy_amount:.8f} is below minimum order size", strategy)
                 return
 
             # Record which dynamic tier triggered (for display as "Dynamic -5%").
@@ -397,11 +428,16 @@ class KrakenDCA:
                     tier_threshold, _ = self._match_tier(change)
                     dynamic_tier = tier_threshold
 
-            if self.config.max_monthly_amount is not None:
+            if self.config.max_monthly_amount is not None and not budget_overridden:
                 monthly_spent = self.store.get_monthly_spent(self.config.trading_pair, self.config.deposit_day, self.config.buy_hour)
                 buy_cost = buy_amount * current_price
                 if monthly_spent + buy_cost > self.config.max_monthly_amount:
-                    print(f"{Colors.YELLOW}⚠ Buy skipped: monthly spend {monthly_spent:.2f} + {buy_cost:.2f} would exceed limit {self.config.max_monthly_amount:.2f}{Colors.RESET}")
+                    self._skip_buy(
+                        f"monthly spend {monthly_spent:.2f} + {buy_cost:.2f} would exceed limit "
+                        f"{self.config.max_monthly_amount:.2f} — use Buy Now again and confirm "
+                        f"'buy anyway' to exceed the budget once",
+                        strategy,
+                    )
                     return
 
             fiat_currency = self.get_fiat_currency()

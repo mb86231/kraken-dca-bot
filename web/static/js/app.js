@@ -125,6 +125,7 @@ async function loadStatus() {
   try {
     const data = await apiGet('/api/status');
     if (!data) return;
+    lastStatusData = data;
     setModeBanner(data);
 
     const statusBadge = document.getElementById('status-badge');
@@ -252,6 +253,7 @@ async function loadStatus() {
 // Modern replacement for window.confirm(): shows the shared in-page modal
 // and resolves to true (confirmed) or false (cancelled / Escape / backdrop).
 let _confirmResolve = null;
+let lastStatusData = null;
 
 function uiConfirm(message, { title = 'Please confirm', danger = true, confirmText = 'Confirm' } = {}) {
   return new Promise((resolve) => {
@@ -286,6 +288,41 @@ document.addEventListener('click', async (e) => {
   try {
     const data = await apiPost(url);
     showToast(data.message || 'Action completed', 'success');
+    loadStatus();
+  } catch (err) {
+    showToast(err.message || 'Action failed', 'error');
+  } finally {
+    button.disabled = false;
+  }
+});
+
+// Buy Now: when the monthly budget is spent, ask for a one-time over-budget
+// approval instead of letting the bot silently skip the buy server-side.
+document.addEventListener('click', async (e) => {
+  const button = e.target.closest('#buy-now-btn');
+  if (!button) return;
+  e.preventDefault();
+  const mb = lastStatusData && lastStatusData.monthly_budget;
+  let overBudget = false;
+  if (mb && mb.limit != null && mb.next_buy_cost != null && mb.spent + mb.next_buy_cost > mb.limit) {
+    const overBy = mb.spent + mb.next_buy_cost - mb.limit;
+    overBudget = await uiConfirm(
+      `The monthly budget is used up (${formatCurrency(mb.spent, mb.currency)} of ${formatCurrency(mb.limit, mb.currency)}). ` +
+      `Buying now would exceed it by about ${formatCurrency(overBy, mb.currency)}. Buy anyway? (one-time)`,
+      { title: 'Over monthly budget', danger: true, confirmText: 'Buy anyway' }
+    );
+    if (!overBudget) return;
+  } else {
+    const ok = await uiConfirm(
+      'Trigger a one-time buy now? This will place an order according to your strategy.',
+      { title: 'Confirm action', danger: false }
+    );
+    if (!ok) return;
+  }
+  button.disabled = true;
+  try {
+    const res = await apiPost('/api/bot/cycle', overBudget ? { over_budget: true } : {});
+    showToast(res.message || 'Action completed', 'success');
     loadStatus();
   } catch (err) {
     showToast(err.message || 'Action failed', 'error');

@@ -84,6 +84,24 @@ def test_runtime_overrides_manual_cycle(tmp_path: Path):
     assert overrides.manual_cycle_requested is False
 
 
+def test_runtime_overrides_manual_cycle_over_budget(tmp_path: Path):
+    overrides = RuntimeOverrides(filepath=tmp_path / "overrides.json")
+    overrides.request_manual_cycle(over_budget=True)
+    assert overrides.manual_cycle_requested is True
+    assert overrides.manual_buy_over_budget is True
+
+    # Persists across reloads.
+    reloaded = RuntimeOverrides(filepath=tmp_path / "overrides.json")
+    assert reloaded.manual_buy_over_budget is True
+
+    # Clearing the cycle request does NOT clear the budget approval; the buy
+    # itself consumes it via clear_over_budget().
+    overrides.clear_manual_cycle()
+    assert overrides.manual_buy_over_budget is True
+    overrides.clear_over_budget()
+    assert overrides.manual_buy_over_budget is False
+
+
 def test_runtime_overrides_stop(tmp_path: Path):
     overrides = RuntimeOverrides(filepath=tmp_path / "overrides.json")
     overrides.request_stop()

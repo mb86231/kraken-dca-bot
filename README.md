@@ -8,10 +8,10 @@ A secure, self-hosted bot for automated Dollar Cost Averaging (DCA) on the Krake
 - **Lump-sum DCA** — deploy a one-time amount evenly over a defined window until a target end date
 - **Dynamic DCA tiers** — automatically scales each buy with the price trend: buy more when the price drops, skip or reduce when it rises. Tier table fully configurable in the dashboard
 - **Production preflight** — a comprehensive read-only check suite (30+ checks: credentials, balance, market data, order state, security) to run before going live; results are advisory with manual acknowledgements, and every real order is independently re-validated at time of placement
-- **Web dashboard** — portfolio, performance charts (30/90/180/365 days), transactions, live controls (Buy Now, Pause, Live Trading toggle), settings, logs, alerts with acknowledge-all, audit trail, backups
+- **Web dashboard** — portfolio, performance charts (30/90/180/365 days), transactions, live controls (Buy Now, Pause, Live Trading toggle), settings, logs, alerts with acknowledge-all, audit trail, backups. A skipped buy is never silent: it shows up as an alert, and Buy Now asks for a one-time over-budget approval when the monthly budget is spent
 - **In-app credential management** — Kraken API keys, Telegram token, local admin password, and Authentik (OIDC) are entered in Settings and stored in `data/secrets.json` (mode 0600), never in `config.json`, never in backups
 - **Dry-run by default** — the bot starts in dry-run mode; live trading is enabled explicitly via the dashboard toggle. Every live order is re-validated at placement time (environment, demo mode, live flag, bot state, unresolved order attempts, idempotency, current exchange metadata)
-- **Telegram notifications** — startup, buy, and error alerts
+- **Telegram notifications** — startup, buy, and error alerts; plus an interactive command bot (`/status`, `/price`, `/buy`, `/pause`, …) with chat-ID allow-list, one-time confirmations, and full audit logging — no inbound ports needed
 - **Order safety** — order attempts tracked with HOLD/UNKNOWN handling, cancel/retry/acknowledge from the dashboard, automatic reconciliation against Kraken
 - **Hardened container** — non-root user, read-only root filesystem, dropped capabilities, no new privileges, resource limits
 - **Security-first web UI** — bcrypt password hashing, signed sessions, CSRF protection, rate limiting, login lockout, optional OIDC single sign-on via Authentik
@@ -94,6 +94,7 @@ See [`INSTALL.md`](INSTALL.md) for the full installation guide and [`docs/config
 | [`INSTALL.md`](INSTALL.md) | Full installation guide |
 | [`docs/configuration.md`](docs/configuration.md) | Complete `config.json` and environment-variable reference |
 | [`docs/WEB_DASHBOARD.md`](docs/WEB_DASHBOARD.md) | Dashboard setup, reverse proxy, HTTPS |
+| [`docs/TELEGRAM.md`](docs/TELEGRAM.md) | Telegram notifications and the interactive command bot |
 | [`docs/operations/PRODUCTION_PREFLIGHT.md`](docs/operations/PRODUCTION_PREFLIGHT.md) | Preflight checks explained |
 | [`docs/secrets.md`](docs/secrets.md) | Secret management and rotation |
 | [`docs/SECURITY_HARDENING.md`](docs/SECURITY_HARDENING.md) | Rate limits, brute-force protection, CSP, container hardening |

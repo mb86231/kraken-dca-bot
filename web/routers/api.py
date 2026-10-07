@@ -294,6 +294,13 @@ def api_status(
                 else 0.0
             ),
             "currency": _quote_currency(config.trading_pair),
+            # Estimate of the next base buy, so the UI can ask for a one-time
+            # over-budget approval before requesting the manual cycle.
+            "next_buy_cost": (
+                round(config.crypto_amount * state.last_price, 2)
+                if state.last_price
+                else None
+            ),
         },
         "last_price": state.last_price,
         "last_price_at": format_datetime(state.last_price_at),
@@ -1163,10 +1170,21 @@ async def api_bot_cycle(
         raise HTTPException(status_code=503, detail="Bot is not running. Please restart the bot.")
     if state.paused:
         raise HTTPException(status_code=409, detail="Bot is paused. Resume the bot before buying.")
-    overrides.request_manual_cycle()
+    over_budget = False
+    try:
+        payload = await request.json()
+        if isinstance(payload, dict):
+            over_budget = bool(payload.get("over_budget"))
+    except Exception:
+        pass  # no body (older frontends) — plain manual buy
+    overrides.request_manual_cycle(over_budget=over_budget)
     state.wake()
-    _audit_log("bot_manual_cycle", {}, request)
-    return {"status": "ok", "message": "One-time buy requested. The bot will place the order shortly."}
+    _audit_log("bot_manual_cycle", {"over_budget": over_budget}, request)
+    message = "One-time buy requested"
+    if over_budget:
+        message += " (approved over monthly budget)"
+    message += ". The bot will place the order shortly."
+    return {"status": "ok", "message": message}
 
 
 @router.post("/bot/stop")

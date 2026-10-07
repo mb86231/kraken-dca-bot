@@ -101,6 +101,23 @@ def test_login_form_csrf_matches_cookie_on_first_visit(setup_client: TestClient)
     assert match.group(1) == cookie_token
 
 
+def test_login_page_reuses_existing_csrf_cookie(setup_client: TestClient):
+    """Reloading /login must NOT rotate the CSRF cookie: a form that was
+    already open in the browser before the reload must still validate.
+    Regression for: second GET /login rotates the cookie -> form from the
+    first response fails with 403 'CSRF token invalid'."""
+    import re
+
+    setup_client.get("/login")
+    first = str(setup_client.cookies.get("dca_csrf") or "")
+    assert first
+    response = setup_client.get("/login")
+    assert str(setup_client.cookies.get("dca_csrf") or "") == first
+    match = re.search(r'name="csrf_token" value="([^"]+)"', response.text)
+    assert match, "login form must carry a csrf_token value"
+    assert match.group(1) == first
+
+
 def test_setup_token_is_announced_in_logs(setup_client: TestClient):
     from unittest import mock
 

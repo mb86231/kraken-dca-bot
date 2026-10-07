@@ -149,6 +149,7 @@ class RuntimeOverrides:
         self.paused: bool = data.get("paused", False)
         self.pause_reason: str | None = data.get("pause_reason")
         self.manual_cycle_requested: bool = data.get("manual_cycle_requested", False)
+        self.manual_buy_over_budget: bool = data.get("manual_buy_over_budget", False)
         self.stop_requested: bool = data.get("stop_requested", False)
         self.temporary_max_price: float | None = data.get("temporary_max_price")
 
@@ -157,6 +158,7 @@ class RuntimeOverrides:
             "paused": self.paused,
             "pause_reason": self.pause_reason,
             "manual_cycle_requested": self.manual_cycle_requested,
+            "manual_buy_over_budget": self.manual_buy_over_budget,
             "stop_requested": self.stop_requested,
             "temporary_max_price": self.temporary_max_price,
         }
@@ -167,13 +169,21 @@ class RuntimeOverrides:
         self.pause_reason = reason if paused else None
         self._save()
 
-    def request_manual_cycle(self) -> None:
+    def request_manual_cycle(self, over_budget: bool = False) -> None:
         self.manual_cycle_requested = True
+        # One-shot: only the next manual buy may exceed the monthly budget.
+        self.manual_buy_over_budget = over_budget
         self._save()
 
     def clear_manual_cycle(self) -> None:
         self.manual_cycle_requested = False
         self._save()
+
+    def clear_over_budget(self) -> None:
+        """Consume the one-shot budget override (called when the buy runs)."""
+        if self.manual_buy_over_budget:
+            self.manual_buy_over_budget = False
+            self._save()
 
     def request_stop(self) -> None:
         self.stop_requested = True
@@ -192,6 +202,7 @@ class RuntimeOverrides:
             "paused": self.paused,
             "pause_reason": self.pause_reason,
             "manual_cycle_requested": self.manual_cycle_requested,
+            "manual_buy_over_budget": self.manual_buy_over_budget,
             "stop_requested": self.stop_requested,
             "temporary_max_price": self.temporary_max_price,
         }

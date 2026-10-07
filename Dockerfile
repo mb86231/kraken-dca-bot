@@ -41,6 +41,12 @@ COPY --chown=${APP_UID}:${APP_GID} scripts/entrypoint.sh scripts/healthcheck.sh 
 
 RUN chmod +x /app/main.py /app/scripts/entrypoint.sh /app/scripts/healthcheck.sh
 
+# Pre-create runtime directories with the app user's ownership. Fresh named
+# volumes (compose.public.yaml) inherit this UID/GID; without it Docker creates
+# the mountpoints root-owned and the non-root app cannot write its data.
+RUN mkdir -p /app/data /app/backups /app/logs \
+    && chown -R ${APP_UID}:${APP_GID} /app/data /app/backups /app/logs
+
 USER ${APP_USER}
 
 # Web dashboard port. The bot itself only needs outbound HTTPS unless the
