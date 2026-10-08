@@ -16,6 +16,8 @@ installation, see **Updates** in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
   an "≈ Value" column (amount × current price, live-updating while you type),
   and the base crypto amount shows its current value underneath the input.
   The page also states Kraken's minimum order size for the configured pair.
+- **Version badge in the dashboard**: the navigation bar shows the running
+  app version (e.g. `v1.2.1`) next to the DCA-Bot title.
 - `/api/settings` now returns a `market` block (quote currency, last price,
   Kraken order minimum from the public AssetPairs endpoint, 5 s timeout,
   fail-closed).
