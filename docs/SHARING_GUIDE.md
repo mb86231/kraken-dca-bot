@@ -10,13 +10,15 @@ infrastructure details, or personal information.
 The public repository contains only:
 
 - Application source code (`bot/`, `web/`, `main.py`).
-- Container manifests (`Dockerfile`, `compose.yaml`, `compose.staging.yaml`).
+- Container manifests (`Dockerfile`, `compose.yaml`,
+  `compose.public.yaml`).
 - Documentation and architecture decision records (`docs/`, `ARCHITECTURE.md`,
   `README.md`, `INSTALL.md`).
 - Example configuration and environment templates (`config.json`,
   `.env.example`).
 - Tests (`tests/`).
-- Host-side scripts and systemd unit templates (`scripts/`, `systemd/`).
+- Host-side helper scripts (`scripts/` — the `staging-*.sh` helpers and the
+  `systemd/` units are **not** part of the public mirror).
 - Vendored front-end libraries (`web/static/vendor/chart.js/`).
 
 All of these are safe to share as long as the verification steps below pass.
@@ -149,10 +151,19 @@ mypy .
 
 ## What the recipient must do before running
 
-1. Create a Kraken API key with **Query Funds** and **Create & Modify Orders**
-   permissions only. Never enable **Withdraw Funds**.
-2. Generate a bcrypt password hash with `scripts/generate_password_hash.py`.
-3. Generate a stable `SESSION_SECRET`.
-4. Copy `.env.example` to `.env` and fill in real values.
-5. Start in `LIVE_TRADING_ENABLED=false` / `DEMO_MODE=true` and validate first.
-6. Read `docs/operations/VALIDATION_RUNBOOK.md` before enabling live trading.
+1. Install with the quick start in [`README.md`](../README.md) or the
+   step-by-step walkthrough in [`docs/INSTALLATION.md`](INSTALLATION.md) —
+   no credentials in files are needed: the first container start prints a
+   **setup token** to the log, and the admin account is created in the
+   dashboard. Note: the token changes on every container restart until the
+   admin account exists — always take it from the most recent logs
+   (`docker compose -f compose.public.yaml logs | grep -A6 "FIRST-RUN SETUP"`).
+2. Create a Kraken API key with **Query Funds** and **Create & Modify Orders**
+   permissions only. Never enable **Withdraw Funds**. Enter it in the
+   dashboard (Settings → API Keys).
+3. Configure pair, amount and schedule (Settings → Strategy), run the
+   **Preflight** checks, and only then enable live trading (top bar).
+   Until then the bot runs in dry-run mode.
+4. Start with `LIVE_TRADING_ENABLED` off / small amounts and validate first.
+   Read [`docs/operations/VALIDATION_RUNBOOK.md`](operations/VALIDATION_RUNBOOK.md)
+   before enabling live trading.

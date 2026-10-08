@@ -69,6 +69,8 @@ To stop: `docker compose -f compose.public.yaml down`. Your data lives in the na
 > ```
 >
 > Do not widen the port binding to plain HTTP on an untrusted network. And do **not** use a `compose.override.yaml` for the port: docker compose *merges* `ports` lists, so adding `8000:8000` there creates a second binding for the same host port and the container fails to start with a misleading `address already in use`. Use `DCA_BOT_BIND` instead — there is exactly one binding either way. Details: [`docs/WEB_DASHBOARD.md`](docs/WEB_DASHBOARD.md).
+>
+> The `up -d` above **recreates the container**, and the first-run setup token changes on every restart. If the admin account does not exist yet, take the fresh token from the current logs (`docker compose -f compose.public.yaml logs | grep -A6 "FIRST-RUN SETUP"`).
 
 ### Alternative: build from source
 

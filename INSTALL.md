@@ -23,6 +23,15 @@ http://localhost:8000 — the login page shows the **First-run setup** form.
 Enter the token and choose your admin username and password. You are signed
 in immediately, and the setup form never appears again.
 
+The token changes on every container restart until the admin account exists
+— if the container was recreated (e.g. an `.env` change for reverse-proxy
+access below) after you noted the token, fetch the fresh one from the
+current logs:
+
+```bash
+docker compose -f compose.public.yaml logs | grep -A6 "FIRST-RUN SETUP"
+```
+
 The session secret is generated and persisted automatically; everything else
 — Kraken keys, Telegram, strategy — is configured in the dashboard UI. If
 you prefer pre-seeding credentials via environment variables instead of the
@@ -87,7 +96,9 @@ DCA_BOT_BIND=0.0.0.0
 WEB_UI_SECURE_COOKIE=true
 ```
 
-then `docker compose -f compose.public.yaml up -d`. Do **not** widen the
+then `docker compose -f compose.public.yaml up -d` (this recreates the
+container — if the first-run setup is still pending, the setup token changes;
+take the fresh one from the logs, see Option A step 2). Do **not** widen the
 port via `compose.override.yaml` — compose merges `ports` lists, producing
 two bindings for the same host port and a misleading
 "address already in use" at startup. Example nginx config and background:
@@ -126,6 +137,7 @@ Open http://127.0.0.1:8000 and sign in with `demo-password`. Demo mode cannot pl
 ## Troubleshooting
 
 - **Dashboard does not start** — check `docker compose logs`; in production `WEB_UI_PASSWORD_HASH` and `SESSION_SECRET` are required (Option A step 1).
+- **`Invalid setup token`** — the container was restarted/recreated after the token was noted; a new token is generated on every start until the admin account exists. Fetch the current one: `docker compose -f compose.public.yaml logs | grep -A6 "FIRST-RUN SETUP"`.
 - **API connection failed** — re-enter Kraken credentials in Settings → API Keys; verify key permissions on Kraken.
 - **Orders rejected: volume minimum not met** — raise the buy amount so `amount × price` exceeds Kraken's minimum (typically ~10 in your quote currency).
 - **Pair not found** — use Kraken's exact pair symbols (`XXBTZUSD`, not `BTCUSD`); list: https://api.kraken.com/0/public/AssetPairs
