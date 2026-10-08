@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+from html.parser import HTMLParser
 from pathlib import Path
 
 import bcrypt
@@ -178,6 +180,36 @@ def test_settings_update_dynamic_dca_partial_keeps_tiers(auth_client):
     assert data["dynamic_dca"]["enabled"] is False
     assert len(data["dynamic_dca"]["tiers"]) == 1
     assert data["dynamic_dca"]["tiers"][0]["amount"] == 0.0009
+
+
+class _InputAttrParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.attrs: list[tuple[str, str | None]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "input":
+            self.attrs = attrs
+
+
+def test_settings_tier_checkbox_renders_checked_for_enabled_tier(auth_client):
+    """Regression: a stray quote after the 'checked' interpolation produced
+    the attribute 'checked\"' instead of 'checked', so enabled tiers always
+    rendered unchecked after reload."""
+    html = auth_client.get("/settings").text
+    m = re.search(
+        r'<td><input type="checkbox" class="tier-enabled"[^<]*\$\{tier\.enabled[^<]*</td>',
+        html,
+    )
+    assert m, "tier checkbox template line not found on settings page"
+    line = m.group(0)
+    # Simulate an enabled tier: the JS interpolates 'checked' into the tag.
+    rendered = line.replace("${tier.enabled ? 'checked' : ''}", "checked")
+    rendered = rendered.split("<td>")[1].split("</td>")[0]
+    parser = _InputAttrParser()
+    parser.feed(rendered)
+    attr_names = [name for name, _ in parser.attrs]
+    assert "checked" in attr_names, f"checked missing from rendered attrs: {parser.attrs}"
 
 
 def test_delete_all_transactions_authenticated(auth_client):
