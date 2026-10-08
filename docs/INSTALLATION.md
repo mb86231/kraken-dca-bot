@@ -256,7 +256,7 @@ berührt sie nicht.
 | Symptom | Ursache / Lösung |
 |---|---|
 | `failed to bind host port … address already in use`, aber `ss` zeigt nichts | Doppeltes Port-Binding durch `compose.override.yaml`. Compose mergt `ports`-Listen → zwei Bindings für denselben Host-Port. Fix: Override löschen, Bindung über `DCA_BOT_BIND` in `.env` setzen (Betrieb 2/3). |
-| `PermissionError: /app/data/config.json` beim Start | Altes Image / alte Volumes mit root-Rechten. `docker compose pull` (Fix seit Oktober 2025 im Image), Volumes einmalig retten: `docker compose run --rm --user root --entrypoint chown dca-bot -R 1500:1500 /app/data /app/backups /app/logs` |
+| `PermissionError: /app/data/config.json` beim Start | Altes Image / alte Volumes mit root-Rechten. `docker compose pull` (Fix seit Oktober 2026 im Image), Volumes einmalig retten: `docker compose run --rm --user root --entrypoint chown dca-bot -R 1500:1500 /app/data /app/backups /app/logs` |
 | `403 CSRF token invalid` beim Login/Setup | Seite wurde doppelt geladen (alter Stand). `docker compose pull && up -d`, dann einmal `Strg+Shift+R`. |
 | Login schlägt fehl, aber über die IP geht's | `WEB_UI_SECURE_COOKIE=true` aktiv → Login nur noch über die HTTPS-Proxy-Adresse. Gewolltes Verhalten (Betrieb 3). |
 | `502 Bad Gateway` am Proxy | Container lauscht noch auf `127.0.0.1` → `DCA_BOT_BIND=0.0.0.0` in `.env` setzen und `up -d` (Betrieb 3, Schritt 1). |
