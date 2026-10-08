@@ -57,6 +57,8 @@ When no admin password is configured anywhere, the bot starts in
 
 1. The container log prints a one-time **setup token**
    (`docker compose logs` — look for the `FIRST-RUN SETUP` banner).
+   The token changes on every container restart until the admin account
+   exists — always take it from the most recent logs.
 2. Open the dashboard: the login page shows a **First-run setup** form
    instead of the sign-in form.
 3. Enter the setup token and choose your admin username and password.

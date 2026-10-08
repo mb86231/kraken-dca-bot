@@ -48,6 +48,17 @@ docker compose -f compose.public.yaml logs -f
 After startup, the logs show a line with the
 **FIRST-RUN SETUP TOKEN** — write it down, then press `Ctrl+C`.
 
+**Token lifetime:** the token is valid only until the admin account is
+created (Part B1) — and only for the **current container run**. Every
+container restart (including recreates caused by `.env` changes in
+modes 2/3 below) generates a **new** token and prints it to the logs
+again. If you note the token here and restart the container afterwards,
+fetch the fresh token from the **most recent** logs:
+
+```bash
+docker compose -f compose.public.yaml logs | grep -A6 "FIRST-RUN SETUP"
+```
+
 ### A5 — Verify
 
 ```bash
@@ -115,6 +126,13 @@ printf 'DCA_BOT_BIND=0.0.0.0\nWEB_UI_SECURE_COOKIE=false\n' > .env
 docker compose -f compose.public.yaml up -d
 ```
 
+**The container is recreated now** (`.env` changed) — the setup token
+from Part A4 is no longer valid. Fetch the fresh token:
+
+```bash
+docker compose -f compose.public.yaml logs | grep -A6 "FIRST-RUN SETUP"
+```
+
 Expected `docker compose config | grep -A3 ports:` output:
 
 ```yaml
@@ -143,6 +161,13 @@ the container stays reachable via plain HTTP on the LAN.
 cd ~/kraken-dca-bot
 printf 'DCA_BOT_BIND=0.0.0.0\nWEB_UI_SECURE_COOKIE=true\n' > .env
 docker compose -f compose.public.yaml up -d
+```
+
+**The container is recreated now** (`.env` changed) — the setup token
+from Part A4 is no longer valid. Fetch the fresh token:
+
+```bash
+docker compose -f compose.public.yaml logs | grep -A6 "FIRST-RUN SETUP"
 ```
 
 - `DCA_BOT_BIND=0.0.0.0` — the proxy on another machine must be able to
@@ -188,9 +213,16 @@ Applies to all modes. URL depends on the mode: `http://localhost:8000`
 
 ### B1 — Create the admin account
 
-On first visit, the login page is a **setup form**: setup token (from the
-logs, Part A4) + desired username + password (min. 8 characters).
-You are logged in afterwards.
+On first visit, the login page is a **setup form**: setup token + desired
+username + password (min. 8 characters). You are logged in afterwards.
+
+The setup token is printed in the container logs — always take the token
+from the **most recent** container run (it changes on every restart until
+the admin account exists):
+
+```bash
+docker compose -f compose.public.yaml logs | grep -A6 "FIRST-RUN SETUP"
+```
 
 ### B2 — Enter the Kraken API key
 
@@ -259,3 +291,4 @@ does not touch them.
 | `403 CSRF token invalid` at login/setup | Page loaded twice (stale copy). `docker compose pull && up -d`, then press `Ctrl+Shift+R` once. |
 | Login fails, but works via the IP | `WEB_UI_SECURE_COOKIE=true` active → login only via the HTTPS proxy address. Intended behaviour (mode 3). |
 | `502 Bad Gateway` at the proxy | Container still listening on `127.0.0.1` → set `DCA_BOT_BIND=0.0.0.0` in `.env` and run `up -d` (mode 3, step 1). |
+| `Invalid setup token` during first-run setup | The container was restarted or recreated after the token was noted (changing `.env` in modes 2/3 does this) — a **new** token is generated on every start until the admin account exists. Fetch the current one: `docker compose -f compose.public.yaml logs \| grep -A6 "FIRST-RUN SETUP"` |
