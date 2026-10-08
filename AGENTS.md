@@ -47,3 +47,8 @@ This repository is mirrored one-directionally to
 (tree export with internal facts replaced by placeholders; `.gitea/` and
 `systemd/` excluded). Never commit real hostnames, internal IPs, or secrets:
 the mirror verifies the export and fails closed.
+
+See `.gitea/PUBLISHING.md` (private infrastructure doc, never published)
+for the full release flow: what gets published, how tags and container
+images reach GitHub, and how GitHub releases are created from
+`CHANGELOG.md`.

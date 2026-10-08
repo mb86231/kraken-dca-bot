@@ -103,6 +103,7 @@ See [`INSTALL.md`](INSTALL.md) for the full installation guide and [`docs/config
 | Document | Purpose |
 |----------|---------|
 | [`CHANGELOG.md`](CHANGELOG.md) | What changed in every release, and how to update |
+| [GitHub Releases](https://github.com/mb86231/kraken-dca-bot/releases) | Published versions with notes and container images |
 | [`INSTALL.md`](INSTALL.md) | Full installation guide |
 | [`docs/INSTALLATION.md`](docs/INSTALLATION.md) | Step-by-step walkthrough: localhost-only, LAN/IP, or behind a reverse proxy |
 | [`docs/configuration.md`](docs/configuration.md) | Complete `config.json` and environment-variable reference |
