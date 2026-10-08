@@ -204,6 +204,7 @@ Copy `.env.example` to `.env` and fill in real values. `.env` is in
 | `OIDC_CLIENT_ID` | OIDC client ID (optional). |
 | `OIDC_CLIENT_SECRET` | OIDC client secret (optional). |
 | `OIDC_ALLOWED_SUBJECTS` | Comma-separated identities (sub, username, or email) allowed to log in via OIDC. **Fail closed: when OIDC is enabled and this is empty, no OIDC login is accepted.** |
+| `SECRETS_PATH` | Path of the dashboard secrets store (default `data/secrets.json`, `/app/data/secrets.json` in the container). |
 
 ### Runtime toggles and non-secret settings
 
@@ -215,14 +216,24 @@ Copy `.env.example` to `.env` and fill in real values. `.env` is in
 | `WEB_UI_ENABLED` | `true` | Enable the FastAPI dashboard. |
 | `WEB_UI_HOST` | `0.0.0.0` | Dashboard bind address inside the container. |
 | `WEB_UI_PORT` | `8000` | Dashboard port inside the container. |
-| `WEB_UI_PUBLISH` | `0.0.0.0:8003:8000` | Port published on the container host. |
+| `WEB_UI_PUBLISH` | `0.0.0.0:8003:8000` | Port published on the container host (used by `compose.yaml`, the build-from-source setup). |
+| `IMAGE_NAME` | `<REGISTRY_HOST>/.../crypto-agent` | Container image name for CI. |
+| `IMAGE_TAG` | `<git-sha>` | Container image tag for CI. |
 | `WEB_UI_USERNAME` | `admin` | Dashboard admin username. |
 | `WEB_UI_SECURE_COOKIE` | `true` / `false` | Set `Secure` flag on cookies (use only with HTTPS). |
+| `SESSION_TTL_HOURS` | `24` | Session lifetime in hours; logout and credential changes revoke sessions immediately. |
+| `OIDC_ENABLED` | `false` / `true` | Show the "Sign in with SSO" button on the login page. |
+| `OIDC_ISSUER_URL` | `https://authentik.example.com/application/o/dca-bot/` | OIDC issuer URL. |
+| `OIDC_REDIRECT_URI` | `https://bot.example.com/auth/callback` | OIDC redirect URI (must match the SSO provider). |
+| `OIDC_SCOPES` | `openid email profile` | OIDC scopes requested at login. |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
 | `DATA_DIR` | `data` | Directory for runtime JSON files. |
 | `HEARTBEAT_FILE` | `data/heartbeat.json` | Path to the trading-loop heartbeat file. |
 | `HEARTBEAT_MAX_AGE_SECONDS` | `900` | Maximum heartbeat age for readiness. |
 | `BACKUP_DIR` | `backups` | Directory for backup archives. |
+| `BACKUP_DAILY_COUNT` | `14` | Daily backups kept by the backup rotation. |
+| `BACKUP_WEEKLY_COUNT` | `8` | Weekly backups kept by the backup rotation. |
+| `RETENTION_DAYS` | `30` | Age after which backup archives are pruned. |
 | `ORDER_ATTEMPTS_FILE` | `data/order_attempts.json` | Persisted order-attempt state. |
 | `MONITORING_TOKEN` | `<random>` | Bearer token for `/api/metrics`. |
 | `RATE_LIMIT_ENABLED` | `true` | Master switch for rate limiting. |
@@ -233,6 +244,8 @@ Copy `.env.example` to `.env` and fill in real values. `.env` is in
 | `DISABLE_RATE_LIMIT` | `false` | Allowed only in non-production environments. |
 | `LOGIN_MAX_FAILURES` | `5` | Failed logins before lockout. |
 | `LOGIN_LOCKOUT_SECONDS` | `900` | Lockout duration in seconds. |
+| `LOGIN_FAILURE_WINDOW_SECONDS` | `900` | Failures older than this decay instead of accumulating (defaults to the lockout window). |
+| `LOGIN_MAX_TRACKED_KEYS` | `10000` | Bound for the per-key failure map; protects against memory exhaustion via random usernames. |
 | `ORDER_RETRY_MAX_ATTEMPTS` | `4` | Max order retry attempts. |
 | `ORDER_RETRY_BASE_SECONDS` | `30` | Base retry delay. |
 | `ORDER_RETRY_MULTIPLIER` | `4` | Exponential backoff multiplier. |
@@ -240,6 +253,9 @@ Copy `.env.example` to `.env` and fill in real values. `.env` is in
 | `ORDER_RECONCILE_WINDOW_SECONDS` | `300` | Window before an unknown order is treated as rejected. |
 | `ORDER_UNKNOWN_HOLD_SECONDS` | `1800` | Max time an unknown order stays reconciling before HOLD. |
 | `ORDER_RECONCILE_INTERVAL_SECONDS` | `30` | Minimum seconds between reconciliation queries. |
+| `ORDER_FEE_BUFFER_PERCENT` | `0.5` | Extra safety margin applied by the order executor before placing a live order. |
+| `PREFLIGHT_EXPIRY_SECONDS` | `3600` | Preflight result lifetime (used by the optional preflight script). |
+| `PREFLIGHT_HEARTBEAT_MAX_AGE_SECONDS` | `900` | Maximum heartbeat age for the preflight readiness check. |
 | `PREFLIGHT_FEE_BUFFER_PERCENT` | `0.5` | Extra safety margin used by the optional preflight script. |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | `123456,-789` | Comma-separated chat IDs allowed to send Telegram commands. Defaults to `TELEGRAM_CHAT_ID`. |
 | `TELEGRAM_ALLOWED_USER_IDS` | `123456` | Comma-separated Telegram user IDs allowed to issue commands/confirmations. When unset, only **private chats** are accepted — group members cannot drive the bot. |
@@ -268,9 +284,6 @@ Security properties:
 - Per-chat rate limiting (2 s between commands, 20/minute).
 - Every command and executed action is written to the audit log.
 - Secrets are never accepted or printed by any command.
-| `ORDER_FEE_BUFFER_PERCENT` | `0.5` | Extra safety margin applied by the order executor before placing a live order. |
-| `IMAGE_NAME` | `<REGISTRY_HOST>/.../crypto-agent` | Container image name for CI. |
-| `IMAGE_TAG` | `<git-sha>` | Container image tag for CI. |
 
 ### Demo mode
 
