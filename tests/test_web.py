@@ -104,6 +104,15 @@ def test_login_and_dashboard(client):
     assert "DCA-Bot" in response.text
 
 
+def test_dashboard_shows_version_badge(auth_client):
+    from bot.utils import APP_VERSION
+
+    response = auth_client.get("/dashboard")
+    assert response.status_code == 200
+    assert 'class="brand-version"' in response.text
+    assert f"v{APP_VERSION}" in response.text
+
+
 def test_api_status_requires_auth(client):
     response = client.get("/api/status")
     assert response.status_code == 401

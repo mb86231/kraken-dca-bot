@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from bot.utils import APP_VERSION
 from web.app import app
 
 
@@ -190,7 +191,7 @@ def test_operations_status_no_secrets_in_response(client: TestClient, temp_dir: 
     for secret in secrets_to_check:
         assert secret not in body, f"Secret leaked in operations status: {secret}"
 
-    assert data["version"] == "1.1.0"
+    assert data["version"] == APP_VERSION
     assert "heartbeat" in data
     assert data["heartbeat"]["age_seconds"] <= 60
     assert "orders" in data
