@@ -1,84 +1,84 @@
-# Installation & Betrieb — Schritt für Schritt
+# Installation & Operation — Step by Step
 
-Komplette Walkthrough von der leeren Maschine bis zum laufenden Bot, mit
-drei Betriebsarten. Alle Befehle gelten für das Docker-Quick-Start-Setup
-(`compose.public.yaml`, Prebuilt-Image von ghcr.io).
+Complete walkthrough from a blank machine to a running bot, covering three
+deployment modes. All commands target the Docker quick-start setup
+(`compose.public.yaml`, prebuilt image from ghcr.io).
 
-**Inhalt**
+**Contents**
 
-- [Teil A — Gemeinsame Basis (alle Betriebsarten)](#teil-a--gemeinsame-basis)
-- [Betrieb 1 — Localhost-only (Default, sicherste Variante)](#betrieb-1--localhost-only-default)
-- [Betrieb 2 — Zugriff aus dem Netz per IP (Plain HTTP, vertrautes LAN)](#betrieb-2--zugriff-aus-dem-netz-per-ip)
-- [Betrieb 3 — Hinter einem Reverse Proxy mit TLS (empfohlen für Fernzugriff)](#betrieb-3--hinter-einem-reverse-proxy-mit-tls)
-- [Teil B — Ersteinrichtung im Dashboard (alle Betriebsarten)](#teil-b--ersteinrichtung-im-dashboard)
+- [Part A — Common Base (all modes)](#part-a--common-base)
+- [Mode 1 — Localhost-only (default, safest)](#mode-1--localhost-only-default)
+- [Mode 2 — Network access via IP (plain HTTP, trusted LAN)](#mode-2--network-access-via-ip-plain-http-trusted-lan)
+- [Mode 3 — Behind a reverse proxy with TLS (recommended for remote access)](#mode-3--behind-a-reverse-proxy-with-tls-recommended-for-remote-access)
+- [Part B — First-time Setup in the Dashboard (all modes)](#part-b--first-time-setup-in-the-dashboard)
 - [Telegram (optional)](#telegram-optional)
 - [Updates](#updates)
 - [Troubleshooting](#troubleshooting)
 
 ---
 
-## Teil A — Gemeinsame Basis
+## Part A — Common Base
 
-Gilt für alle drei Betriebsarten. Wähle danach **eine** der Betriebe 1–3.
+Applies to all three modes. Afterwards, pick **one** of modes 1–3.
 
-### A1 — Voraussetzungen
+### A1 — Prerequisites
 
-- Linux-Host (oder jeder Docker-fähige Rechner) mit Docker + Compose-Plugin
-- Ein Kraken-Account (für den Bot selbst)
+- Linux host (or any Docker-capable machine) with Docker + the Compose plugin
+- A Kraken account (for the bot itself)
 
-### A2 — Verzeichnis und Compose-Datei
+### A2 — Directory and compose file
 
 ```bash
 mkdir -p ~/kraken-dca-bot && cd ~/kraken-dca-bot
 curl -O https://raw.githubusercontent.com/mb86231/kraken-dca-bot/main/compose.public.yaml
 ```
 
-### A3 — `.env` nach Betriebsart anlegen
+### A3 — Create `.env` for your mode
 
-Die `.env` steuert die Netz-Bindung. Details pro Variante siehe unten — für
-Betrieb 1 reicht eine leere oder keine `.env`.
+The `.env` controls the network binding. Details per mode below — for
+mode 1, an empty or absent `.env` is sufficient.
 
-### A4 — Starten und Setup-Token holen
+### A4 — Start and get the setup token
 
 ```bash
 docker compose -f compose.public.yaml up -d
 docker compose -f compose.public.yaml logs -f
 ```
 
-Nach dem Start erscheint in den Logs eine Zeile mit dem
-**FIRST-RUN SETUP TOKEN** — notieren, dann `Strg+C`.
+After startup, the logs show a line with the
+**FIRST-RUN SETUP TOKEN** — write it down, then press `Ctrl+C`.
 
-### A5 — Verifizieren
+### A5 — Verify
 
 ```bash
 docker compose -f compose.public.yaml ps
-# Erwartung: Status "healthy"
+# expected: status "healthy"
 
 docker compose -f compose.public.yaml config | grep -A3 ports:
-# Erwartung: genau EIN ports-Eintrag (Inhalt je nach Betriebsart)
+# expected: exactly ONE ports entry (content depends on the mode)
 ```
 
-Wichtig: **genau ein Binding.** Zwei Einträge für denselben Host-Port
-(z. B. `0.0.0.0:8000` *und* `127.0.0.1:8000`) lassen den Container mit
-einem irreführenden `address already in use` startfehlschlagen — typische
-Ursache ist ein `compose.override.yaml` (Compose mergt `ports`-Listen, statt
-sie zu ersetzen). Siehe [Troubleshooting](#troubleshooting).
+Important: **exactly one binding.** Two entries for the same host port
+(e.g. `0.0.0.0:8000` *and* `127.0.0.1:8000`) make the container fail with a
+misleading `address already in use` — the typical cause is a
+`compose.override.yaml` (Compose merges `ports` lists instead of replacing
+them). See [Troubleshooting](#troubleshooting).
 
 ---
 
-## Betrieb 1 — Localhost-only (Default)
+## Mode 1 — Localhost-only (Default)
 
-Die sicherste Variante: Das Dashboard ist **nur auf dem Rechner selbst**
-erreichbar. Kein `.env`-Eintrag nötig — `compose.public.yaml` bindet
-standardmäßig auf `127.0.0.1`.
+The safest mode: the dashboard is reachable **only on the machine itself**.
+No `.env` entry needed — `compose.public.yaml` binds to `127.0.0.1` by
+default.
 
 ```bash
-# keine .env nötig; bei vorhandener Datei sicherstellen:
-# (kein DCA_BOT_BIND gesetzt)
+# no .env needed; if the file exists, make sure
+# DCA_BOT_BIND is NOT set
 docker compose -f compose.public.yaml up -d
 ```
 
-Erwartete Ausgabe von `docker compose config | grep -A3 ports:`:
+Expected `docker compose config | grep -A3 ports:` output:
 
 ```yaml
     ports:
@@ -88,27 +88,26 @@ Erwartete Ausgabe von `docker compose config | grep -A3 ports:`:
         host_ip: 127.0.0.1
 ```
 
-**Zugriff:** nur lokal, `http://localhost:8000`.
+**Access:** local only, `http://localhost:8000`.
 
-**Von außen (temporär):** SSH-Tunnel statt Portöffnung:
+**From outside (temporary):** use an SSH tunnel instead of opening a port:
 
 ```bash
 ssh -L 8000:127.0.0.1:8000 user@bot-host
-# dann lokal http://localhost:8000 öffnen
+# then open http://localhost:8000 locally
 ```
 
-Danach weiter mit [Teil B](#teil-b--ersteinrichtung-im-dashboard).
+Continue with [Part B](#part-b--first-time-setup-in-the-dashboard).
 
 ---
 
-## Betrieb 2 — Zugriff aus dem Netz per IP
+## Mode 2 — Network access via IP (plain HTTP, trusted LAN)
 
-Für **vertraute Netze** (Heim-LAN, VLAN mit ausschließlich vertrauten
-Geräten): Der Container lauscht auf allen Schnittstellen, du greifst direkt
-über `http://<host-ip>:8000` zu. **Achtung:** unverschlüsseltes HTTP —
-jeder im Netz kann den Traffic mitlesen (inkl. Login-Passwort beim ersten
-Setup und bei jeder Anmeldung). Nur verwenden, wenn das Netz vertrauenswürdig
-ist.
+For **trusted networks** (home LAN, VLAN with trusted devices only): the
+container listens on all interfaces and you reach it directly at
+`http://<host-ip>:8000`. **Warning:** unencrypted HTTP — anyone on the
+network can read the traffic (including the login password at first setup
+and on every login). Use only if the network is trustworthy.
 
 ```bash
 cd ~/kraken-dca-bot
@@ -116,29 +115,29 @@ printf 'DCA_BOT_BIND=0.0.0.0\nWEB_UI_SECURE_COOKIE=false\n' > .env
 docker compose -f compose.public.yaml up -d
 ```
 
-Erwartete Ausgabe von `docker compose config | grep -A3 ports:`:
+Expected `docker compose config | grep -A3 ports:` output:
 
 ```yaml
     ports:
       - mode: ingress
         ...
         published: "8000"
-        # kein host_ip → bindet 0.0.0.0
+        # no host_ip -> binds 0.0.0.0
 ```
 
-**Zugriff:** `http://<host-ip>:8000` von jedem Gerät im Netz.
+**Access:** `http://<host-ip>:8000` from any device on the network.
 
-Danach weiter mit [Teil B](#teil-b--ersteinrichtung-im-dashboard).
+Continue with [Part B](#part-b--first-time-setup-in-the-dashboard).
 
 ---
 
-## Betrieb 3 — Hinter einem Reverse Proxy mit TLS
+## Mode 3 — Behind a Reverse Proxy with TLS (recommended for remote access)
 
-**Empfohlene Variante für Fernzugriff** (auch übers Internet): Ein
-Reverse Proxy (Nginx Proxy Manager, Caddy, Traefik, nginx) terminiert TLS,
-der Container bleibt mit Plain HTTP im LAN erreichbar.
+**Recommended mode for remote access** (including over the internet): a
+reverse proxy (Nginx Proxy Manager, Caddy, Traefik, nginx) terminates TLS;
+the container stays reachable via plain HTTP on the LAN.
 
-### Schritt 1 — `.env` auf dem Bot-Host
+### Step 1 — `.env` on the bot host
 
 ```bash
 cd ~/kraken-dca-bot
@@ -146,93 +145,93 @@ printf 'DCA_BOT_BIND=0.0.0.0\nWEB_UI_SECURE_COOKIE=true\n' > .env
 docker compose -f compose.public.yaml up -d
 ```
 
-- `DCA_BOT_BIND=0.0.0.0` — der Proxy auf einer anderen Maschine muss den
-  Container über dessen IP erreichen können.
-- `WEB_UI_SECURE_COOKIE=true` — Session-Cookies werden als `Secure`
-  markiert. **Folge:** Login funktioniert nur noch über die HTTPS-Adresse
-  des Proxys, nicht mehr über `http://<ip>:8000`. Das ist gewollt.
+- `DCA_BOT_BIND=0.0.0.0` — the proxy on another machine must be able to
+  reach the container via its IP.
+- `WEB_UI_SECURE_COOKIE=true` — session cookies are marked `Secure`.
+  **Consequence:** login only works via the proxy's HTTPS address, no longer
+  via `http://<ip>:8000`. This is intentional.
 
-### Schritt 2 — Proxy-Host beim Reverse Proxy anlegen
+### Step 2 — Create the proxy host
 
-Am Beispiel **Nginx Proxy Manager** (analog für andere):
+Using **Nginx Proxy Manager** as an example (analogous for others):
 
 1. **Hosts → Proxy Hosts → Add Proxy Host**
 2. Domain: `bot.example.com`
-3. Scheme: `http`, Forward Hostname: **IP des Bot-Hosts**, Forward Port: **8000**
-4. Tab **SSL**: Zertifikat wählen (z. B. Let's Encrypt), **Force SSL** an
-5. **Websockets Support**: an (für Live-Ansichten im Browser)
+3. Scheme: `http`, Forward Hostname: **IP of the bot host**, Forward Port: **8000**
+4. **SSL** tab: pick a certificate (e.g. Let's Encrypt), enable **Force SSL**
+5. **Websockets Support**: enabled (for live views in the browser)
 6. Save
 
-Generisches nginx-Beispiel: [`docs/WEB_DASHBOARD.md`](WEB_DASHBOARD.md)
+Generic nginx example: [`docs/WEB_DASHBOARD.md`](WEB_DASHBOARD.md)
 → *Reverse Proxy / HTTPS*.
 
-### Schritt 3 — Verifizieren
+### Step 3 — Verify
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" http://<bot-host-ip>:8000/login
-# Erwartung: 200 (der Proxy erreicht den Container)
+# expected: 200 (the proxy reaches the container)
 
 curl -s -o /dev/null -w "%{http_code}\n" https://bot.example.com/login
-# Erwartung: 200 (TLS-Strecke komplett)
+# expected: 200 (TLS chain complete)
 ```
 
-Danach weiter mit [Teil B](#teil-b--ersteinrichtung-im-dashboard) — das
-Setup **immer über die HTTPS-Adresse** des Proxys durchführen (Secure
-Cookie), nicht über die IP.
+Continue with [Part B](#part-b--first-time-setup-in-the-dashboard) — always
+perform the setup via the proxy's **HTTPS address** (Secure cookie), not via
+the IP.
 
 ---
 
-## Teil B — Ersteinrichtung im Dashboard
+## Part B — First-time Setup in the Dashboard
 
-Gilt für alle Betriebsarten. Aufruf je nach Variante: `http://localhost:8000`
-(1), `http://<ip>:8000` (2) oder `https://bot.example.com` (3).
+Applies to all modes. URL depends on the mode: `http://localhost:8000`
+(1), `http://<ip>:8000` (2), or `https://bot.example.com` (3).
 
-### B1 — Admin-Account anlegen
+### B1 — Create the admin account
 
-Beim ersten Aufruf ist die Login-Seite ein **Setup-Formular**: Setup-Token
-(aus den Logs, Teil A4) + gewünschter Username + Passwort (mind. 8 Zeichen).
-Danach bist du eingeloggt.
+On first visit, the login page is a **setup form**: setup token (from the
+logs, Part A4) + desired username + password (min. 8 characters).
+You are logged in afterwards.
 
-### B2 — Kraken-API-Key eintragen
+### B2 — Enter the Kraken API key
 
-1. Kraken → **Settings → API → Create Key**: nur die Berechtigungen
-   **Query Funds** und **Create & Modify Orders** aktivieren —
-   **niemals** Withdraw Funds oder Admin/Transfer.
-2. Dashboard → **Settings → API Keys** → Key + Secret eintragen, Save.
-3. Oben rechts wird der Badge **Kraken API** grün.
+1. Kraken → **Settings → API → Create Key**: enable only the permissions
+   **Query Funds** and **Create & Modify Orders** — **never** Withdraw Funds
+   or Admin/Transfer.
+2. Dashboard → **Settings → API Keys** → enter key + secret, Save.
+3. The **Kraken API** badge in the top bar turns green.
 
-### B3 — Strategie konfigurieren
+### B3 — Configure the strategy
 
-**Settings → Strategy:** Trading Pair (z. B. `XBTEUR`), Betrag pro Kauf,
-Deposit Day, Buy Hour. Optional **Dynamic DCA** aktivieren — dann skaliert
-jeder Kauf automatisch mit dem Kurstrend (mehr beim Dip, weniger/bei 0 beim
-Anstieg), Tier-Tabelle frei anpassbar. Details:
+**Settings → Strategy:** trading pair (e.g. `XBTEUR`), amount per buy,
+deposit day, buy hour. Optionally enable **Dynamic DCA** — every buy then
+scales automatically with the price trend (more on dips, less or none on
+rises); the tier table is freely adjustable. Details:
 [`docs/configuration.md`](configuration.md).
 
-### B4 — Preflight ausführen
+### B4 — Run the preflight
 
-Menü **Preflight → Run checks**. Alle automatischen Checks sollten grün
-sein. Die zwei manuellen Kraken-Hinweise (Key-Berechtigungen lassen sich
-nicht per API prüfen) einmal im Kraken-Account verifizieren und im
-Preflight **acknowledgen**.
+Menu **Preflight → Run checks**. All automatic checks should be green.
+Verify the two manual Kraken notes (key permissions cannot be checked via
+API) once in your Kraken account, then **acknowledge** them in the
+preflight view.
 
-### B5 — Live-Trading aktivieren (bewusster Schritt)
+### B5 — Enable live trading (a deliberate step)
 
-Top-Bar: **Live: OFF** klicken und bestätigen. Solange der Schalter aus
-ist, läuft der Bot im **Dry-Run**: Käufe werden berechnet, protokolliert und
-auf dem Dashboard angezeigt, aber **nicht** bei Kraken platziert.
+Top bar: click **Live: OFF** and confirm. While the switch is off, the bot
+runs in **dry-run**: buys are calculated, logged, and shown on the
+dashboard, but **not** placed on Kraken.
 
 ---
 
 ## Telegram (optional)
 
-1. Bei [@BotFather](https://t.me/BotFather) `/newbot` → Token notieren.
-2. Chat-ID ermitteln (z. B. [@userinfobot](https://t.me/userinfobot)).
-3. Dashboard → **Settings → API Keys** → Telegram-Bereich ausfüllen.
-4. Fertig — der Bot schickt Benachrichtigungen (Start, Käufe, Fehler) und
-   beantwortet Befehle wie `/status`, `/price`, `/buy`, `/pause`, `/resume`.
-   Sicherheitsmodell (Chat-ID-Allow-List, Einmal-Bestätigung für Kauf/Pause,
-   Audit-Log): [`docs/TELEGRAM.md`](TELEGRAM.md).
+1. Message [@BotFather](https://t.me/BotFather) with `/newbot` → write down the token.
+2. Find your chat ID (e.g. via [@userinfobot](https://t.me/userinfobot)).
+3. Dashboard → **Settings → API Keys** → fill in the Telegram section.
+4. Done — the bot sends notifications (startup, buys, errors) and answers
+   commands like `/status`, `/price`, `/buy`, `/pause`, `/resume`.
+   Security model (chat ID allow-list, one-time confirmation for buy/pause,
+   audit log): [`docs/TELEGRAM.md`](TELEGRAM.md).
 
 ---
 
@@ -245,18 +244,18 @@ docker compose -f compose.public.yaml pull
 docker compose -f compose.public.yaml up -d
 ```
 
-Die `.env` bleibt liegen und wird übernommen. Daten leben in den Named
-Volumes `dca-bot-data`, `dca-bot-backups`, `dca-bot-logs` — ein Image-Update
-berührt sie nicht.
+Your `.env` stays in place and is picked up again. Data lives in the named
+volumes `dca-bot-data`, `dca-bot-backups`, `dca-bot-logs` — an image update
+does not touch them.
 
 ---
 
 ## Troubleshooting
 
-| Symptom | Ursache / Lösung |
+| Symptom | Cause / Fix |
 |---|---|
-| `failed to bind host port … address already in use`, aber `ss` zeigt nichts | Doppeltes Port-Binding durch `compose.override.yaml`. Compose mergt `ports`-Listen → zwei Bindings für denselben Host-Port. Fix: Override löschen, Bindung über `DCA_BOT_BIND` in `.env` setzen (Betrieb 2/3). |
-| `PermissionError: /app/data/config.json` beim Start | Altes Image / alte Volumes mit root-Rechten. `docker compose pull` (Fix seit Oktober 2026 im Image), Volumes einmalig retten: `docker compose run --rm --user root --entrypoint chown dca-bot -R 1500:1500 /app/data /app/backups /app/logs` |
-| `403 CSRF token invalid` beim Login/Setup | Seite wurde doppelt geladen (alter Stand). `docker compose pull && up -d`, dann einmal `Strg+Shift+R`. |
-| Login schlägt fehl, aber über die IP geht's | `WEB_UI_SECURE_COOKIE=true` aktiv → Login nur noch über die HTTPS-Proxy-Adresse. Gewolltes Verhalten (Betrieb 3). |
-| `502 Bad Gateway` am Proxy | Container lauscht noch auf `127.0.0.1` → `DCA_BOT_BIND=0.0.0.0` in `.env` setzen und `up -d` (Betrieb 3, Schritt 1). |
+| `failed to bind host port … address already in use`, but `ss` shows nothing | Duplicate port binding via `compose.override.yaml`. Compose merges `ports` lists → two bindings for the same host port. Fix: delete the override, set the binding via `DCA_BOT_BIND` in `.env` (mode 2/3). |
+| `PermissionError: /app/data/config.json` at startup | Old image / old volumes with root ownership. `docker compose pull` (fixed in the image since October 2026), repair volumes once: `docker compose run --rm --user root --entrypoint chown dca-bot -R 1500:1500 /app/data /app/backups /app/logs` |
+| `403 CSRF token invalid` at login/setup | Page loaded twice (stale copy). `docker compose pull && up -d`, then press `Ctrl+Shift+R` once. |
+| Login fails, but works via the IP | `WEB_UI_SECURE_COOKIE=true` active → login only via the HTTPS proxy address. Intended behaviour (mode 3). |
+| `502 Bad Gateway` at the proxy | Container still listening on `127.0.0.1` → set `DCA_BOT_BIND=0.0.0.0` in `.env` and run `up -d` (mode 3, step 1). |
