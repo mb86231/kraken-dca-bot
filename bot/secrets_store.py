@@ -29,6 +29,7 @@ SECTION_ENV_VARS: Dict[str, Dict[str, str]] = {
     "telegram": {
         "bot_token": "TELEGRAM_BOT_TOKEN",
         "chat_id": "TELEGRAM_CHAT_ID",
+        "allowed_user_ids": "TELEGRAM_ALLOWED_USER_IDS",
     },
     "web": {
         "username": "WEB_UI_USERNAME",
@@ -42,6 +43,7 @@ SECTION_ENV_VARS: Dict[str, Dict[str, str]] = {
         "client_secret": "OIDC_CLIENT_SECRET",
         "redirect_uri": "OIDC_REDIRECT_URI",
         "scopes": "OIDC_SCOPES",
+        "allowed_subjects": "OIDC_ALLOWED_SUBJECTS",
     },
 }
 
@@ -49,6 +51,7 @@ SECTION_STORE_KEYS: Dict[str, Dict[str, str]] = {
     "telegram": {
         "bot_token": "telegram_bot_token",
         "chat_id": "telegram_chat_id",
+        "allowed_user_ids": "telegram_allowed_user_ids",
     },
     "web": {
         "username": "web_ui_username",
@@ -62,11 +65,22 @@ SECTION_STORE_KEYS: Dict[str, Dict[str, str]] = {
         "client_secret": "oidc_client_secret",
         "redirect_uri": "oidc_redirect_uri",
         "scopes": "oidc_scopes",
+        "allowed_subjects": "oidc_allowed_subjects",
     },
 }
 
 # Values that are safe to expose (not masked) in status output.
-_UNMASKED_FIELDS = {"enabled", "username", "issuer_url", "client_id", "redirect_uri", "scopes", "chat_id"}
+_UNMASKED_FIELDS = {
+    "enabled",
+    "username",
+    "issuer_url",
+    "client_id",
+    "redirect_uri",
+    "scopes",
+    "chat_id",
+    "allowed_subjects",
+    "allowed_user_ids",
+}
 
 
 def _as_bool(value: object) -> bool:

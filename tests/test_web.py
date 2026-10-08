@@ -201,24 +201,18 @@ class _InputAttrParser(HTMLParser):
             self.attrs = attrs
 
 
-def test_settings_tier_checkbox_renders_checked_for_enabled_tier(auth_client):
-    """Regression: a stray quote after the 'checked' interpolation produced
-    the attribute 'checked\"' instead of 'checked', so enabled tiers always
-    rendered unchecked after reload."""
+def test_settings_tier_checkbox_set_via_dom_property(auth_client):
+    """Regression: tier state must be applied via the DOM checked property,
+    not interpolated into an innerHTML template string — the old string
+    interpolation produced a stray 'checked"' attribute (tiers rendered
+    unchecked after reload) and is an XSS sink."""
     html = auth_client.get("/settings").text
-    m = re.search(
-        r'<td><input type="checkbox" class="tier-enabled"[^<]*\$\{tier\.enabled[^<]*</td>',
-        html,
+    assert "${tier.enabled" not in html, (
+        "tier checkbox must not be interpolated into markup"
     )
-    assert m, "tier checkbox template line not found on settings page"
-    line = m.group(0)
-    # Simulate an enabled tier: the JS interpolates 'checked' into the tag.
-    rendered = line.replace("${tier.enabled ? 'checked' : ''}", "checked")
-    rendered = rendered.split("<td>")[1].split("</td>")[0]
-    parser = _InputAttrParser()
-    parser.feed(rendered)
-    attr_names = [name for name, _ in parser.attrs]
-    assert "checked" in attr_names, f"checked missing from rendered attrs: {parser.attrs}"
+    assert re.search(r"enabledInput\.checked\s*=\s*!!tier\.enabled", html), (
+        "tier checkbox must be set via the checked DOM property"
+    )
 
 
 def test_delete_all_transactions_authenticated(auth_client):
@@ -497,8 +491,9 @@ def test_web_settings_save_local_admin(auth_client):
     assert stored_hash != "super-secret-1"
     assert bcrypt.checkpw("super-secret-1".encode(), stored_hash.encode())
 
-    # Existing session stays valid after the change.
-    assert auth_client.get("/api/status").status_code == 200
+    # F7: the credential change revokes every existing session (fail closed).
+    assert auth_client.get("/api/status").status_code == 401
+    assert "revoked" in data["message"]
 
     # New credentials work for a fresh login.
     csrf = _get_login_csrf(auth_client)
@@ -520,14 +515,31 @@ def test_web_settings_password_mismatch_rules(auth_client):
     assert response.status_code == 400
 
 
+def _relogin(client: TestClient, username: str, password: str) -> None:
+    csrf = _get_login_csrf(client)
+    response = client.post(
+        "/login",
+        data={"username": username, "password": password, "csrf_token": csrf},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    # Login rotates the CSRF cookie — keep the client's header in sync.
+    client.headers["X-CSRF-Token"] = str(client.cookies.get("dca_csrf") or "")
+
+
 def test_web_settings_clear(auth_client):
     os.environ.pop("WEB_UI_USERNAME", None)
-    auth_client.put("/api/settings/web", json={"username": "tempadmin"})
+    os.environ.pop("WEB_UI_PASSWORD_HASH", None)
+    auth_client.put("/api/settings/web", json={"username": "tempadmin", "password": "temp-secret-1"})
+    # The update revoked our session — log in with the new credentials.
+    _relogin(auth_client, "tempadmin", "temp-secret-1")
     response = auth_client.post("/api/settings/web/clear")
     assert response.status_code == 200
     saved = json.loads(Path(os.environ["SECRETS_PATH"]).read_text())
     assert "web_ui_username" not in saved
     assert "web_ui_password_hash" not in saved
+    # Clearing credentials also revokes the session (first-run setup re-arms).
+    assert auth_client.get("/api/status").status_code == 401
 
 
 def test_oidc_settings_save_and_clear(auth_client):
@@ -598,3 +610,14 @@ def test_alerts_acknowledge_all(auth_client):
     finally:
         with contextlib.suppress(OSError):
             alerts_path.unlink()
+
+
+def test_logout_revokes_session(auth_client):
+    """F7: after logout a copied session cookie must no longer work."""
+    session = auth_client.cookies.get("dca_session")
+    assert session
+    response = auth_client.post("/logout", follow_redirects=False)
+    assert response.status_code == 303
+    # Re-plant the pre-logout cookie value: the server-side session is revoked.
+    auth_client.cookies.set("dca_session", session)
+    assert auth_client.get("/api/status").status_code == 401

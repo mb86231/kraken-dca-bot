@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import time
-from collections import defaultdict
 from dataclasses import dataclass
 
 from fastapi import HTTPException, Request, status
@@ -23,12 +22,26 @@ class BruteForceProtector:
 
     The current deployment is single-process, so an in-memory store is sufficient.
     A multi-process or multi-node deployment would need a shared store such as Redis.
+
+    Lockout semantics:
+
+    - Failures only count within ``failure_window_seconds``; older failures
+      decay, so a stale count can never lock an account on its own.
+    - When a lockout expires the record is reset, so the account owner can
+      log in again — the lockout must not renew itself indefinitely.
+    - Failures recorded *during* an active lockout do not extend it.
+    - The tracked-key map is pruned so unauthenticated probing of random
+      usernames cannot grow memory without bound.
     """
 
     def __init__(self) -> None:
         self.max_failures = int(os.environ.get("LOGIN_MAX_FAILURES", "5"))
         self.lockout_seconds = float(os.environ.get("LOGIN_LOCKOUT_SECONDS", "900"))
-        self._failures: dict[str, _FailureRecord] = defaultdict(_FailureRecord)
+        self.failure_window_seconds = float(
+            os.environ.get("LOGIN_FAILURE_WINDOW_SECONDS", str(self.lockout_seconds))
+        )
+        self._max_tracked = int(os.environ.get("LOGIN_MAX_TRACKED_KEYS", "10000"))
+        self._failures: dict[str, _FailureRecord] = {}
 
     @staticmethod
     def _ip_key(request: Request) -> str:
@@ -38,13 +51,46 @@ class BruteForceProtector:
     def _user_key(username: str) -> str:
         return f"user:{username.lower().strip()}"
 
+    def _is_stale(self, record: _FailureRecord, now: float) -> bool:
+        """A record is stale once it is no longer locked and its failures
+        (if any) have all decayed out of the counting window."""
+        if record.locked_until and now < record.locked_until:
+            return False
+        if record.count == 0:
+            return True
+        return (now - record.first_failure_at) > self.failure_window_seconds
+
+    def _prune(self, now: float) -> None:
+        if len(self._failures) <= self._max_tracked:
+            return
+        stale_keys = [
+            key for key, record in self._failures.items()
+            if self._is_stale(record, now)
+        ]
+        for key in stale_keys:
+            del self._failures[key]
+
     def is_locked_out(self, request: Request, username: str) -> bool:
         """Return True if the IP or username is currently locked out."""
         now = time.monotonic()
         for key in (self._ip_key(request), self._user_key(username)):
-            record = self._failures[key]
-            if record.locked_until and now < record.locked_until:
-                return True
+            record = self._failures.get(key)
+            if record is None:
+                continue
+            if record.locked_until:
+                if now < record.locked_until:
+                    return True
+                # Lockout expired: reset the record so the next login attempt
+                # starts clean instead of renewing the lockout forever.
+                record.count = 0
+                record.first_failure_at = 0.0
+                record.locked_until = 0.0
+                continue
+            if record.count and (now - record.first_failure_at) > self.failure_window_seconds:
+                # Failures have decayed; drop the stale count.
+                record.count = 0
+                record.first_failure_at = 0.0
+                continue
             if record.count >= self.max_failures:
                 record.locked_until = now + self.lockout_seconds
                 return True
@@ -54,12 +100,21 @@ class BruteForceProtector:
         """Increment failure counters for the IP and username."""
         now = time.monotonic()
         for key in (self._ip_key(request), self._user_key(username)):
-            record = self._failures[key]
-            if record.count == 0:
+            record = self._failures.get(key)
+            if record is None:
+                record = _FailureRecord()
+                self._failures[key] = record
+            if record.locked_until and now < record.locked_until:
+                # Already locked; do not extend the lockout from behind it.
+                continue
+            if record.count == 0 or (now - record.first_failure_at) > self.failure_window_seconds:
                 record.first_failure_at = now
-            record.count += 1
+                record.count = 1
+            else:
+                record.count += 1
             if record.count >= self.max_failures:
                 record.locked_until = now + self.lockout_seconds
+        self._prune(now)
 
     def record_success(self, request: Request, username: str) -> None:
         """Clear failure records after a successful login."""

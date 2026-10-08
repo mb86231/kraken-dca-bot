@@ -166,10 +166,10 @@ def api_login(
 
 
 @router.post("/auth/logout")
-def api_logout(response: Response, _rate_limit=Depends(api_rate_limit)):
+def api_logout(request: Request, response: Response, _rate_limit=Depends(api_rate_limit)):
     from web.auth import logout
 
-    logout(response)
+    logout(request, response)
     return {"status": "ok"}
 
 
@@ -963,7 +963,8 @@ async def api_update_web_auth(
     The password is bcrypt-hashed before it is stored; the raw password is
     never persisted or returned. Environment variables (WEB_UI_USERNAME /
     WEB_UI_PASSWORD_HASH) remain authoritative when set. Changes apply to new
-    logins immediately; existing sessions stay valid.
+    logins immediately and revoke all existing sessions, forcing
+    re-authentication on every device.
     """
     values: dict[str, str] = {}
     if update.username is not None and update.username.strip():
@@ -974,10 +975,13 @@ async def api_update_web_auth(
         raise HTTPException(status_code=400, detail="Nothing to update")
     store = SecretsStore()
     store.save_section("web", values)
+    from web.auth import revoke_all_sessions
+
+    revoke_all_sessions()
     _audit_log("web_auth_updated", {"fields": sorted(values.keys())}, request)
     return {
         "status": "ok",
-        "message": "Local admin saved. Applies to new logins immediately; existing sessions stay valid. "
+        "message": "Local admin saved. All existing sessions were revoked — please log in again. "
                    "If the environment variables are set, they take precedence.",
         "web": store.section_status("web"),
     }
@@ -990,9 +994,12 @@ async def api_clear_web_auth(
     username: str = Depends(require_auth),
     _rate_limit=Depends(settings_rate_limit),
 ):
-    """Remove stored local-admin credentials. Env vars and active sessions are untouched."""
+    """Remove stored local-admin credentials. Env vars are untouched; all sessions are revoked."""
     store = SecretsStore()
     removed = store.clear_section("web")
+    from web.auth import revoke_all_sessions
+
+    revoke_all_sessions()
     _audit_log("web_auth_cleared", {"removed": removed}, request)
     return {
         "status": "ok",

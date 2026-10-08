@@ -31,10 +31,13 @@
       li.style.justifyContent = 'space-between';
       li.style.alignItems = 'center';
       li.style.gap = '0.75rem';
-      li.innerHTML = `
-        <span><strong>${a.severity}</strong> ${a.message}</span>
-        <button class="btn btn-small btn-secondary ack-btn" data-id="${a.id}">Ack</button>
-      `;
+      const text = document.createElement('span');
+      text.appendChild(el('strong', null, a.severity));
+      text.appendChild(document.createTextNode(' ' + (a.message || '')));
+      const btn = el('button', 'btn btn-small btn-secondary ack-btn', 'Ack');
+      btn.dataset.id = a.id;
+      li.appendChild(text);
+      li.appendChild(btn);
       list.appendChild(li);
     });
 

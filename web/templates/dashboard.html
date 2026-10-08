@@ -84,7 +84,9 @@
           ? `dynamic ${t.dynamic_tier}%`
           : (t.strategy || 'scheduled');
         const simulated = t.simulated ? ' (sim)' : '';
-        li.innerHTML = `<strong>${time}</strong> ${t.trading_pair} — ${formatCrypto(t.amount)} @ ${formatCurrency(t.price)}${simulated} <span class="badge ${strategy === 'dip' ? 'warn' : 'ok'}">${strategy}</span>`;
+        li.appendChild(el('strong', null, time));
+        li.appendChild(document.createTextNode(` ${t.trading_pair || ''} — ${formatCrypto(t.amount)} @ ${formatCurrency(t.price)}${simulated} `));
+        li.appendChild(el('span', `badge ${strategy === 'dip' ? 'warn' : 'ok'}`, strategy));
         list.appendChild(li);
       });
     } catch (err) {

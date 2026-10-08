@@ -12,7 +12,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 
 # How long to back off when Kraken reports a rate-limit error. Kraken's private
@@ -56,13 +56,27 @@ class KrakenAPI:
         private: bool = False,
         max_retries: int = 3,
         timeout: float = 30,
+        retry_filter: Optional[Callable[[Exception], bool]] = None,
     ) -> Dict:
         """Make API request to Kraken with automatic retry on transient failures.
 
         Rate-limit errors from Kraken (``EAPI:Rate limit exceeded`` or HTTP 429)
         are recognised and retried with a longer, fixed backoff so the per-key
         counter has time to decay.
+
+        ``retry_filter`` decides whether a failed attempt may be retried. The
+        default retries everything (safe for idempotent read endpoints).
+        ``place_market_order`` passes a filter that retries only rate-limit
+        rejections: those are definitive "not accepted" answers, so resubmitting
+        is safe. Any other failure of a non-idempotent order submission is
+        raised immediately and left to the executor's UNKNOWN/reconciliation
+        machinery — blind retries risk a duplicate purchase.
         """
+
+        def _may_retry(exc: Exception) -> bool:
+            if retry_filter is not None:
+                return retry_filter(exc)
+            return True
 
         def _is_rate_limit_error(exc: Exception) -> bool:
             """Return True if the exception looks like a Kraken rate-limit response."""
@@ -108,7 +122,7 @@ class KrakenAPI:
                     return result.get("result", {})
             except Exception as e:
                 is_last_attempt = attempt == max_retries - 1
-                if is_last_attempt:
+                if is_last_attempt or not _may_retry(e):
                     if isinstance(e, urllib.error.HTTPError):
                         raise Exception(f"HTTP Error {e.code}: {e.reason}")
                     elif isinstance(e, urllib.error.URLError):
@@ -223,6 +237,13 @@ class KrakenAPI:
 
         ``userref`` is a stable client reference used for idempotency and
         reconciliation of uncertain orders.
+
+        Order submission is effectively single-shot: only a rate-limit rejection
+        (HTTP 429 / ``EAPI:Rate limit``) is retried, because that answer means
+        Kraken definitively did not accept the order. Timeouts, connection loss,
+        and 5xx responses may mean the order *was* accepted with a lost reply —
+        those raise immediately so the executor reconciles via ``query_orders``
+        before any resubmission instead of risking a duplicate purchase.
         """
         app_env = os.environ.get("APP_ENV", "production").lower()
         if app_env not in ("production", ""):
@@ -237,7 +258,22 @@ class KrakenAPI:
         }
         if userref is not None:
             data["userref"] = str(userref)
-        return self._api_request("/0/private/AddOrder", data, private=True)
+
+        def _retry_only_rate_limits(exc: Exception) -> bool:
+            msg = str(exc).lower()
+            return (
+                "rate limit exceeded" in msg
+                or "eapi:rate limit" in msg
+                or "too many requests" in msg
+                or (isinstance(exc, urllib.error.HTTPError) and exc.code == 429)
+            )
+
+        return self._api_request(
+            "/0/private/AddOrder",
+            data,
+            private=True,
+            retry_filter=_retry_only_rate_limits,
+        )
 
     def query_orders(self, userref: int) -> Dict[str, Dict]:
         """Query private orders by ``userref`` for reconciliation.

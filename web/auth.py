@@ -16,7 +16,9 @@ from itsdangerous import BadSignature, TimestampSigner
 
 from bot.secrets_store import SecretsStore
 from web.brute_force import brute_force_protector, check_login_allowed
+from web.flags import env_flag
 from web.oidc import oidc_provider
+from web.sessions import session_registry
 
 logger = logging.getLogger("dca_bot.web.auth")
 
@@ -92,43 +94,81 @@ class AuthManager:
         """Check a password against the stored bcrypt hash."""
         return bcrypt.checkpw(password.encode(), self.password_hash.encode())
 
+    @property
+    def secure_cookies(self) -> bool:
+        """Whether session/CSRF cookies get the Secure flag.
+
+        Uses the shared boolean truth table (web.flags), so validation and
+        every cookie setter agree on true/1/yes/on vs false/0/no/off.
+        """
+        return env_flag("WEB_UI_SECURE_COOKIE")
+
     def create_session(self, response: Response, username: str) -> None:
-        """Create a signed session cookie."""
-        value = f"{username}:{datetime.now(timezone.utc).isoformat()}"
+        """Create a signed session cookie backed by a revocable server-side ID."""
+        ttl_seconds = int(timedelta(hours=self.session_ttl_hours).total_seconds())
+        jti = session_registry.issue(username, ttl_seconds)
+        value = f"{username}:{jti}:{datetime.now(timezone.utc).isoformat()}"
         signed = self.signer.sign(value).decode("utf-8")
         response.set_cookie(
             self.SESSION_COOKIE,
             signed,
             httponly=True,
-            secure=os.environ.get("WEB_UI_SECURE_COOKIE", "false").lower() == "true",
+            secure=self.secure_cookies,
             samesite="lax",
-            max_age=int(timedelta(hours=self.session_ttl_hours).total_seconds()),
+            max_age=ttl_seconds,
         )
 
     def clear_session(self, response: Response) -> None:
         """Clear the session cookie."""
         response.delete_cookie(self.SESSION_COOKIE)
 
+    def revoke_session(self, request: Request) -> None:
+        """Revoke the request's server-side session ID (logout).
+
+        A copied cookie stops working instead of living out its TTL.
+        """
+        cookie = request.cookies.get(self.SESSION_COOKIE)
+        if not cookie:
+            return
+        try:
+            unsigned = self.signer.unsign(cookie)
+        except BadSignature:
+            return
+        parts = unsigned.decode("utf-8").split(":")
+        if len(parts) >= 2:
+            session_registry.revoke(parts[1])
+
     def clear_csrf_cookie(self, response: Response) -> None:
         """Clear the CSRF cookie with the same attributes used to set it."""
         response.delete_cookie(
             self.CSRF_COOKIE,
             path="/",
-            secure=os.environ.get("WEB_UI_SECURE_COOKIE", "false").lower() == "true",
+            secure=self.secure_cookies,
             samesite="lax",
         )
 
     def get_session_username(self, request: Request) -> Optional[str]:
-        """Validate session cookie and return username."""
+        """Validate session cookie and return username.
+
+        The signed cookie must carry a session ID that is still registered
+        server-side, so revoked (logged-out or credential-changed) sessions
+        stop working immediately. Legacy cookies without a session ID are
+        rejected; the user simply logs in again.
+        """
         cookie = request.cookies.get(self.SESSION_COOKIE)
         if not cookie:
             return None
         try:
             unsigned = self.signer.unsign(cookie, max_age=int(timedelta(hours=self.session_ttl_hours).total_seconds()))
-            username, _ = unsigned.decode("utf-8").split(":", 1)
-            return username
+            parts = unsigned.decode("utf-8").split(":")
+            if len(parts) < 2 or not parts[1]:
+                return None
+            username, jti = parts[0], parts[1]
         except (BadSignature, ValueError):
             return None
+        if session_registry.validate(jti) != username:
+            return None
+        return username
 
     def generate_csrf_token(self) -> str:
         """Generate a new CSRF token."""
@@ -156,7 +196,7 @@ class AuthManager:
             self.CSRF_COOKIE,
             token,
             httponly=False,
-            secure=os.environ.get("WEB_UI_SECURE_COOKIE", "false").lower() == "true",
+            secure=self.secure_cookies,
             samesite="lax",
             max_age=int(timedelta(hours=self.session_ttl_hours).total_seconds()),
         )
@@ -194,9 +234,15 @@ def login_post(request: Request, username: str, password: str, response: Respons
     return True
 
 
-def logout(response: Response) -> None:
+def logout(request: Request, response: Response) -> None:
+    auth_manager.revoke_session(request)
     auth_manager.clear_session(response)
     auth_manager.clear_csrf_cookie(response)
+
+
+def revoke_all_sessions() -> None:
+    """Invalidate every dashboard session (called on credential changes)."""
+    session_registry.revoke_all()
 
 
 def csrf_protect(func):

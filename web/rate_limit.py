@@ -10,32 +10,19 @@ from dataclasses import dataclass, field
 from fastapi import HTTPException, Request, status
 from slowapi.util import get_remote_address
 
-
-# Boolean values that explicitly enable or disable rate limiting.
-_TRUE_VALUES = {"true", "1", "yes", "on"}
-_FALSE_VALUES = {"false", "0", "no", "off"}
-
-
-def _is_true(value: str) -> bool:
-    return value.strip().lower() in _TRUE_VALUES
-
-
-def _is_false(value: str) -> bool:
-    return value.strip().lower() in _FALSE_VALUES
+from web.flags import env_flag
 
 
 def rate_limiting_enabled() -> bool:
     """Return False only when rate limiting is explicitly disabled.
 
     This is the single source of truth for the runtime rate-limit state. An
-    unset variable keeps rate limiting enabled.
+    unset variable keeps rate limiting enabled. Uses the shared boolean
+    truth table (web.flags) so validation, preflight and runtime agree.
     """
-    if _is_true(os.environ.get("DISABLE_RATE_LIMIT", "")):
+    if env_flag("DISABLE_RATE_LIMIT"):
         return False
-    rate_limit_enabled = os.environ.get("RATE_LIMIT_ENABLED", "")
-    if rate_limit_enabled == "":
-        return True
-    return _is_true(rate_limit_enabled)
+    return env_flag("RATE_LIMIT_ENABLED", default=True)
 
 
 def rate_limiting_disabled_for_current_env() -> bool:

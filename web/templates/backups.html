@@ -30,7 +30,9 @@
     }
     data.backups.forEach(b => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${b.name}</td><td>${b.size}</td><td>${b.created}</td>`;
+      tr.appendChild(el('td', null, b.name));
+      tr.appendChild(el('td', null, b.size));
+      tr.appendChild(el('td', null, b.created));
       tbody.appendChild(tr);
     });
   }

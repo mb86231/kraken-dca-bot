@@ -26,13 +26,13 @@
     }
     data.history.slice().reverse().forEach(e => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${new Date(e.timestamp).toLocaleString()}</td>
-        <td>${e.user}</td>
-        <td>${e.action}</td>
-        <td><code>${JSON.stringify(e.details).slice(0, 120)}</code></td>
-        <td>${e.source_ip}</td>
-      `;
+      tr.appendChild(el('td', null, new Date(e.timestamp).toLocaleString()));
+      tr.appendChild(el('td', null, e.user));
+      tr.appendChild(el('td', null, e.action));
+      const detailsTd = document.createElement('td');
+      detailsTd.appendChild(el('code', null, JSON.stringify(e.details).slice(0, 120)));
+      tr.appendChild(detailsTd);
+      tr.appendChild(el('td', null, e.source_ip));
       tbody.appendChild(tr);
     });
   }

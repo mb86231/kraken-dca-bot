@@ -296,8 +296,12 @@ class OIDCProvider:
                         "verify_exp": True,
                         "verify_iat": True,
                         "verify_nbf": True,
-                        "require_exp": True,
-                        "require_iat": True,
+                        "verify_iss": True,
+                        "verify_aud": True,
+                        # Enforce presence, not just validity when present:
+                        # require_exp/require_iat alone do not reject a token
+                        # that omits the claim entirely.
+                        "require": ["exp", "iat", "iss", "aud", "sub"],
                     },
                 ),
             )
@@ -308,6 +312,30 @@ class OIDCProvider:
             ) from exc
 
         return claims
+
+    @property
+    def allowed_subjects(self) -> list[str]:
+        """Operator allowlist of OIDC identities permitted to log in.
+
+        Comma-separated; each entry matches the claim ``sub``,
+        ``preferred_username`` or ``email`` of the validated ID token, so
+        operators can list whatever identifier they know. Empty means
+        nobody — OIDC login fails closed until an allowlist is configured.
+        """
+        raw = self._setting("allowed_subjects") or ""
+        return [entry.strip() for entry in raw.split(",") if entry.strip()]
+
+    def is_allowed_user(self, claims: Dict[str, Any]) -> bool:
+        """Fail-closed check: the token's identity must be on the allowlist."""
+        allowed = self.allowed_subjects
+        if not allowed:
+            return False
+        candidates = {
+            str(claims.get(key))
+            for key in ("sub", "preferred_username", "email")
+            if claims.get(key)
+        }
+        return any(entry in candidates for entry in allowed)
 
     @staticmethod
     def extract_username(claims: Dict[str, Any]) -> str:

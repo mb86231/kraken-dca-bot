@@ -26,6 +26,10 @@ from web.rate_limit import login_rate_limit
 from web.routers import api_router, monitoring_router
 from web.security import SecurityHeadersMiddleware, validate_production_security
 
+import logging
+
+logger = logging.getLogger("dca_bot.web.app")
+
 
 def _strict_env() -> bool:
     return os.environ.get("APP_ENV", "production").lower() in ("production", "staging")
@@ -197,6 +201,16 @@ async def oidc_callback(
     if not expected_nonce or not hmac.compare_digest(expected_nonce, str(nonce)):
         raise HTTPException(status_code=403, detail="Invalid OIDC nonce")
 
+    # Fail closed: only identities on the operator allowlist (sub,
+    # preferred_username or email) may receive a session. With no allowlist
+    # configured every OIDC login is denied.
+    if not oidc_provider.is_allowed_user(claims):
+        logger.warning(
+            "OIDC login denied: identity %s is not in OIDC_ALLOWED_SUBJECTS",
+            claims.get("sub"),
+        )
+        raise HTTPException(status_code=403, detail="OIDC identity is not authorized for this dashboard")
+
     username = oidc_provider.extract_username(claims)
     response = RedirectResponse(url="/dashboard", status_code=303)
     auth_manager.create_session(response, username)
@@ -295,6 +309,12 @@ async def setup_submit(
     SecretsStore().save_section("web", {"username": username, "password_hash": password_hash})
     first_run_setup.complete()
 
+    # Any pre-existing session (e.g. from OIDC before the local admin was
+    # set) must not survive the bootstrap of local credentials.
+    from web.auth import revoke_all_sessions
+
+    revoke_all_sessions()
+
     brute_force_protector.record_success(request, "first-run-setup")
     from web.routers.api import _audit_log
 
@@ -313,7 +333,7 @@ async def logout_route(request: Request):
     request.session.pop("oidc_state", None)
     request.session.pop("oidc_nonce", None)
     request.session.pop("oidc_code_verifier", None)
-    logout(response)
+    logout(request, response)
     return response
 
 

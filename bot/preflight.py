@@ -24,6 +24,7 @@ from bot.notifier import Notifier
 from bot.state import BotState, RuntimeOverrides
 from bot.persistence import JsonFile
 from bot.utils import safe_load_json, utc_now
+from web.flags import env_flag
 
 # How long a preflight result remains valid. After this it must be re-run.
 DEFAULT_RESULT_EXPIRY_SECONDS = int(os.environ.get("PREFLIGHT_EXPIRY_SECONDS", "3600"))
@@ -579,8 +580,7 @@ class ProductionPreflight:
             )
 
         if _is_production():
-            secure_cookie = os.environ.get("WEB_UI_SECURE_COOKIE", "").lower()
-            if secure_cookie in ("true", "1", "yes", "on"):
+            if env_flag("WEB_UI_SECURE_COOKIE"):
                 self._add("secure_cookie", CheckStatus.PASS, "WEB_UI_SECURE_COOKIE is true", "security")
             else:
                 self._add(
@@ -598,11 +598,9 @@ class ProductionPreflight:
         else:
             self._add("csrf_active", CheckStatus.WARN, "CSRF protection requires SESSION_SECRET", "security")
 
-        disable_rate_limit = os.environ.get("DISABLE_RATE_LIMIT", "").lower()
-        rate_limit_enabled = os.environ.get("RATE_LIMIT_ENABLED", "").lower()
-        if disable_rate_limit in ("true", "1", "yes", "on"):
+        if env_flag("DISABLE_RATE_LIMIT"):
             self._add("rate_limiting_active", CheckStatus.FAIL, "DISABLE_RATE_LIMIT is true", "security")
-        elif rate_limit_enabled in ("false", "0", "no", "off"):
+        elif os.environ.get("RATE_LIMIT_ENABLED", "").strip() and not env_flag("RATE_LIMIT_ENABLED"):
             self._add("rate_limiting_active", CheckStatus.FAIL, "RATE_LIMIT_ENABLED is false", "security")
         else:
             self._add("rate_limiting_active", CheckStatus.PASS, "Rate limiting is enabled", "security")

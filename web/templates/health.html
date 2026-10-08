@@ -25,18 +25,26 @@
 <script>
   async function loadHealth() {
     const data = await apiGet('/api/health');
-    document.getElementById('health-bot').innerHTML = `<span class="badge ${data.bot_process ? 'ok' : 'error'}">${data.bot_process ? 'Healthy' : 'Down'}</span>`;
-    document.getElementById('health-exchange').innerHTML = `<span class="badge ${data.exchange_api ? 'ok' : 'warn'}">${data.exchange_api ? 'Connected' : 'Disconnected'}</span>`;
-    document.getElementById('health-telegram').innerHTML = `<span class="badge ${data.telegram_api ? 'ok' : 'warn'}">${data.telegram_api ? 'Configured' : 'Not configured'}</span>`;
-    document.getElementById('health-details').innerHTML = `
-      <div>
-        <p><strong>Version:</strong> ${data.version}</p>
-        <p><strong>Runtime:</strong> ${data.runtime}</p>
-        <p><strong>Server Time:</strong> ${data.server_time}</p>
-        <p><strong>Last Price Update:</strong> ${data.last_price_update}</p>
-        <p><strong>Last Order:</strong> ${data.last_order}</p>
-      </div>
-    `;
+    document.getElementById('health-bot').replaceChildren(el('span', `badge ${data.bot_process ? 'ok' : 'error'}`, data.bot_process ? 'Healthy' : 'Down'));
+    document.getElementById('health-exchange').replaceChildren(el('span', `badge ${data.exchange_api ? 'ok' : 'warn'}`, data.exchange_api ? 'Connected' : 'Disconnected'));
+    document.getElementById('health-telegram').replaceChildren(el('span', `badge ${data.telegram_api ? 'ok' : 'warn'}`, data.telegram_api ? 'Configured' : 'Not configured'));
+    const details = document.getElementById('health-details');
+    details.innerHTML = '';
+    const wrap = document.createElement('div');
+    const rows = [
+      ['Version', data.version],
+      ['Runtime', data.runtime],
+      ['Server Time', data.server_time],
+      ['Last Price Update', data.last_price_update],
+      ['Last Order', data.last_order],
+    ];
+    for (const [label, value] of rows) {
+      const p = document.createElement('p');
+      p.appendChild(el('strong', null, label + ':'));
+      p.appendChild(document.createTextNode(' ' + (value ?? '—')));
+      wrap.appendChild(p);
+    }
+    details.appendChild(wrap);
   }
   loadHealth();
   setInterval(loadHealth, 10000);

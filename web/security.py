@@ -10,6 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 from bot.secrets_store import SecretsStore
+from web.flags import FALSE_VALUES, TRUE_VALUES, env_flag
 
 logger = logging.getLogger("dca_bot.web.security")
 
@@ -55,14 +56,20 @@ def validate_production_security() -> None:
     # Cookies should be marked Secure in production. The dashboard is intended
     # to run behind an HTTPS reverse proxy; an explicit false is honoured for
     # trusted plain-HTTP networks (the localhost/LAN quick-start) but must be a
-    # deliberate choice — an unset variable is rejected.
+    # deliberate choice — an unset variable is rejected. The same shared
+    # truth table (web.flags) drives the actual cookie setters.
     secure_cookie = os.environ.get("WEB_UI_SECURE_COOKIE", "").strip().lower()
     if secure_cookie == "":
         raise RuntimeError(
             "WEB_UI_SECURE_COOKIE must be set explicitly when APP_ENV=production "
             "(true behind an HTTPS proxy; false only on a trusted plain-HTTP network)"
         )
-    if secure_cookie not in ("true", "1", "yes", "on"):
+    if secure_cookie not in TRUE_VALUES | FALSE_VALUES:
+        raise RuntimeError(
+            "WEB_UI_SECURE_COOKIE must be a boolean "
+            "(true/1/yes/on or false/0/no/off)"
+        )
+    if not env_flag("WEB_UI_SECURE_COOKIE"):
         logger.warning(
             "WEB_UI_SECURE_COOKIE=false in production — session cookies are not "
             "marked Secure. Only use this on a trusted plain-HTTP network; put "

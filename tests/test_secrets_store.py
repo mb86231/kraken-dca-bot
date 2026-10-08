@@ -244,7 +244,7 @@ def test_clear_section(store: SecretsStore, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_section_status_masks_secrets(store: SecretsStore, monkeypatch: pytest.MonkeyPatch):
-    for var in ("OIDC_ENABLED", "OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URI", "OIDC_SCOPES"):
+    for var in ("OIDC_ENABLED", "OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URI", "OIDC_SCOPES", "OIDC_ALLOWED_SUBJECTS"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("SECRETS_PATH", str(store.filepath))
     store.save_section("oidc", {
@@ -302,7 +302,7 @@ def test_auth_manager_env_wins_over_store(store: SecretsStore, monkeypatch: pyte
 
 def test_oidc_provider_falls_back_to_store(store: SecretsStore, monkeypatch: pytest.MonkeyPatch):
     from web.oidc import OIDCProvider
-    for var in ("OIDC_ENABLED", "OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URI", "OIDC_SCOPES"):
+    for var in ("OIDC_ENABLED", "OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URI", "OIDC_SCOPES", "OIDC_ALLOWED_SUBJECTS"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("SECRETS_PATH", str(store.filepath))
     store.save_section("oidc", {

@@ -48,17 +48,40 @@ class FakeTelegramApi:
         return self.sent[-1]["reply_markup"]
 
     @staticmethod
-    def _update(update_id: int, chat_id: str, text: str) -> dict:
-        return {"update_id": update_id, "message": {"chat": {"id": chat_id}, "text": text}}
+    def _update(
+        update_id: int,
+        chat_id: str,
+        text: str,
+        *,
+        user_id: str | None = None,
+        chat_type: str = "private",
+    ) -> dict:
+        return {
+            "update_id": update_id,
+            "message": {
+                "chat": {"id": chat_id, "type": chat_type},
+                "from": {"id": int(user_id or chat_id)},
+                "text": text,
+            },
+        }
 
     @staticmethod
-    def _callback(update_id: int, chat_id: str, callback_id: str, data: str) -> dict:
+    def _callback(
+        update_id: int,
+        chat_id: str,
+        callback_id: str,
+        data: str,
+        *,
+        user_id: str | None = None,
+        chat_type: str = "private",
+    ) -> dict:
         return {
             "update_id": update_id,
             "callback_query": {
                 "id": callback_id,
                 "data": data,
-                "message": {"chat": {"id": chat_id}},
+                "from": {"id": int(user_id or chat_id)},
+                "message": {"chat": {"id": chat_id, "type": chat_type}},
             },
         }
 
@@ -323,3 +346,78 @@ class TestLifecycle:
         tgb = TelegramCommandBot(app, api=None, audit_path=tmp_path / "a.json", alerts_path=tmp_path / "al.json")
         assert tgb.allowed_chat_ids == ["4242"]
         assert tgb.enabled is True
+
+
+class TestSenderAuthorization:
+    """F4 regression: chat.id alone must not be sufficient to drive the bot."""
+
+    def test_group_message_ignored_without_user_allowlist(self, tg):
+        tgb, fake = tg
+        tgb._handle_update(
+            FakeTelegramApi._update(1, ALLOWED, "/status", chat_type="supergroup")
+        )
+        assert fake.sent == []
+
+    def test_private_message_accepted_without_user_allowlist(self, tg):
+        tgb, fake = tg
+        tgb._handle_update(FakeTelegramApi._update(1, ALLOWED, "/status"))
+        assert "Portfolio" in fake.last_text()
+
+    def test_group_message_from_allowed_user_accepted(self, tg):
+        tgb, fake = tg
+        tgb.allowed_user_ids = ["777"]
+        tgb._handle_update(
+            FakeTelegramApi._update(1, ALLOWED, "/status", user_id="777", chat_type="supergroup")
+        )
+        assert "Portfolio" in fake.last_text()
+
+    def test_group_message_from_non_allowed_user_ignored(self, tg):
+        tgb, fake = tg
+        tgb.allowed_user_ids = ["777"]
+        tgb._handle_update(
+            FakeTelegramApi._update(1, ALLOWED, "/status", user_id="888", chat_type="supergroup")
+        )
+        assert fake.sent == []
+
+    def test_private_message_from_non_allowed_user_ignored(self, tg):
+        tgb, fake = tg
+        tgb.allowed_user_ids = ["777"]
+        tgb._handle_update(FakeTelegramApi._update(1, ALLOWED, "/status", user_id="888"))
+        assert fake.sent == []
+
+    def test_confirmation_bound_to_requesting_user(self, tg, app):
+        tgb, fake = tg
+        tgb.allowed_user_ids = ["777", "888"]
+        tgb.min_command_interval_seconds = 0.0
+        tgb._handle_update(
+            FakeTelegramApi._update(1, ALLOWED, "/pause", user_id="777", chat_type="supergroup")
+        )
+        token = TestConfirmFlow()._extract_token(fake)
+        # A different allowed user must not be able to confirm the action.
+        tgb._handle_update(
+            FakeTelegramApi._callback(
+                2, ALLOWED, "cb1", f"tg:ok:{token}", user_id="888", chat_type="supergroup"
+            )
+        )
+        assert app.state.paused is False
+        assert "Only the user who requested" in fake.last_text()
+
+    def test_group_callback_ignored_without_user_allowlist(self, tg, app):
+        tgb, fake = tg
+        tgb._handle_update(FakeTelegramApi._update(1, ALLOWED, "/pause"))
+        token = TestConfirmFlow()._extract_token(fake)
+        tgb._handle_update(
+            FakeTelegramApi._callback(2, ALLOWED, "cb1", f"tg:ok:{token}", chat_type="supergroup")
+        )
+        # The pending action must survive an ignored callback…
+        assert app.state.paused is False
+        tgb._handle_update(FakeTelegramApi._callback(3, ALLOWED, "cb2", f"tg:ok:{token}"))
+        # …and still be confirmable from the private chat.
+        assert app.state.paused is True
+
+    def test_allowed_user_ids_loaded_from_env(self, app, monkeypatch, tmp_path):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+        monkeypatch.setenv("TELEGRAM_CHAT_ID", "4242")
+        monkeypatch.setenv("TELEGRAM_ALLOWED_USER_IDS", " 777,abc, 888 ")
+        tgb = TelegramCommandBot(app, api=None, audit_path=tmp_path / "a.json", alerts_path=tmp_path / "al.json")
+        assert tgb.allowed_user_ids == ["777", "888"]

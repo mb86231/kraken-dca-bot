@@ -20,8 +20,9 @@ Guidelines for anyone (human or coding agent) working in this repository.
   `web/templates/`).
 - `tests/` — pytest suite; run `python -m pytest tests/ -q`.
 - `docs/` — user-facing documentation (English).
-- `.gitea/` — private infrastructure (workflows, mirror sync script); never
-  published to the public GitHub mirror.
+- `.gitea/` — private infrastructure (workflows, mirror sync script,
+  publishing/release docs, private backlog); never published to the public
+  GitHub mirror.
 - `compose.public.yaml` — the public quick-start stack (ghcr image).
 
 ## Quality gates (all must pass before pushing)

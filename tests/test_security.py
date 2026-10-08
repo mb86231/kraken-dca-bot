@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from web.app import app  # noqa: E402
-from web.brute_force import brute_force_protector  # noqa: E402
+from web.brute_force import BruteForceProtector, brute_force_protector  # noqa: E402
 from web.rate_limit import rate_limit_config, rate_limiter  # noqa: E402
 from web.security import validate_production_security  # noqa: E402
 
@@ -177,6 +177,117 @@ def test_brute_force_lockout_after_failures(client: TestClient):
     assert "Invalid" in response.text
 
 
+class _FakeClock:
+    """Controllable monotonic clock for lockout tests."""
+
+    def __init__(self, now: float):
+        self.now = now
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+class _FakeRequest:
+    """Minimal stand-in for a FastAPI Request (client=None -> 127.0.0.1)."""
+
+    client = None
+
+
+def _make_protector(monkeypatch, now: float, **overrides) -> BruteForceProtector:
+    clock = _FakeClock(now)
+    monkeypatch.setattr("web.brute_force.time", clock)
+    protector = BruteForceProtector()
+    for key, value in overrides.items():
+        setattr(protector, key, value)
+    return protector
+
+
+def test_lockout_expires_and_owner_can_login_again(monkeypatch):
+    """F6 regression: an expired lockout must not renew itself. After the
+    lockout window the same credentials are accepted again."""
+    protector = _make_protector(monkeypatch, now=100.0, max_failures=3, lockout_seconds=10)
+    req = _FakeRequest()
+
+    for _ in range(3):
+        protector.record_failure(req, "admin")
+    assert protector.is_locked_out(req, "admin") is True
+
+    # After the lockout expires, the record is reset — no self-renewal.
+    import web.brute_force as bf
+
+    bf.time.now = 100.0 + 10.0 + 1  # type: ignore[attr-defined]
+    assert protector.is_locked_out(req, "admin") is False
+
+    # A single new failure no longer re-locks: the counter started fresh.
+    protector.record_failure(req, "admin")
+    assert protector.is_locked_out(req, "admin") is False
+
+
+def test_failures_decay_outside_window(monkeypatch):
+    """Failures older than the counting window decay and cannot sum up."""
+    protector = _make_protector(
+        monkeypatch, now=100.0, max_failures=3, lockout_seconds=10, failure_window_seconds=60
+    )
+    req = _FakeRequest()
+
+    protector.record_failure(req, "admin")
+    protector.record_failure(req, "admin")
+
+    import web.brute_force as bf
+
+    # Two failures just inside the window -> still below threshold.
+    bf.time.now = 100.0 + 59  # type: ignore[attr-defined]
+    protector.record_failure(req, "admin")
+    assert protector.is_locked_out(req, "admin") is True  # 3rd failure locks
+
+    # Fresh protector: failures spread beyond the window never lock.
+    protector2 = _make_protector(
+        monkeypatch, now=200.0, max_failures=3, lockout_seconds=10, failure_window_seconds=60
+    )
+    protector2.record_failure(req, "admin")
+    bf.time.now = 200.0 + 61  # type: ignore[attr-defined]
+    protector2.record_failure(req, "admin")
+    bf.time.now = 200.0 + 122  # type: ignore[attr-defined]
+    protector2.record_failure(req, "admin")
+    assert protector2.is_locked_out(req, "admin") is False
+
+
+def test_failures_during_lockout_do_not_extend_it(monkeypatch):
+    protector = _make_protector(monkeypatch, now=100.0, max_failures=2, lockout_seconds=10)
+    req = _FakeRequest()
+
+    protector.record_failure(req, "admin")
+    protector.record_failure(req, "admin")
+    assert protector.is_locked_out(req, "admin") is True
+
+    import web.brute_force as bf
+
+    # Hammer the endpoint from inside the lockout; the lockout must not stretch.
+    bf.time.now = 105.0  # type: ignore[attr-defined]
+    for _ in range(10):
+        protector.record_failure(req, "admin")
+    bf.time.now = 111.0  # type: ignore[attr-defined]  # original lockout ended at 110
+    assert protector.is_locked_out(req, "admin") is False
+
+
+def test_tracked_keys_are_pruned(monkeypatch):
+    protector = _make_protector(
+        monkeypatch, now=100.0, max_failures=99, lockout_seconds=10,
+        failure_window_seconds=60, _max_tracked=50,
+    )
+    req = _FakeRequest()
+    import web.brute_force as bf
+
+    for i in range(200):
+        protector.record_failure(req, f"user-{i}")
+    assert len(protector._failures) > 50
+
+    # Beyond the decay window all 200 records are stale; the next failure
+    # triggers pruning back under the bound.
+    bf.time.now = 200.0  # type: ignore[attr-defined]
+    protector.record_failure(req, "user-0")
+    assert len(protector._failures) <= 50
+
 def test_successful_login_resets_failure_count(client: TestClient):
     # Two failures, then a success should clear the lockout counter.
     csrf = _get_login_csrf(client)
@@ -328,3 +439,86 @@ def test_validate_production_security_accepts_valid_config(monkeypatch):
     monkeypatch.setenv("WEB_UI_SECURE_COOKIE", "true")
     monkeypatch.setenv("DISABLE_RATE_LIMIT", "false")
     validate_production_security()
+
+
+# ---------------------------------------------------------------------------
+# F9: one boolean truth table for validation, cookie setters and preflight
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("value", ["true", "True", "TRUE", "1", "yes", "on", " YES "])
+def test_env_flag_truthy_variants(monkeypatch, value):
+    from web.flags import env_flag
+
+    monkeypatch.setenv("SOME_FLAG", value)
+    assert env_flag("SOME_FLAG") is True
+
+
+@pytest.mark.parametrize("value", ["false", "False", "FALSE", "0", "no", "off", " No "])
+def test_env_flag_false_variants(monkeypatch, value):
+    from web.flags import env_flag
+
+    monkeypatch.setenv("SOME_FLAG", value)
+    assert env_flag("SOME_FLAG") is False
+
+
+def test_env_flag_unset_returns_default(monkeypatch):
+    from web.flags import env_flag
+
+    monkeypatch.delenv("SOME_FLAG", raising=False)
+    assert env_flag("SOME_FLAG") is False
+    assert env_flag("SOME_FLAG", default=True) is True
+
+
+def test_env_flag_garbage_falls_back_with_warning(monkeypatch):
+    from unittest import mock
+
+    from web.flags import env_flag, parse_bool
+
+    monkeypatch.setenv("SOME_FLAG", "maybe")
+    with pytest.raises(ValueError):
+        parse_bool("maybe")
+    with mock.patch("web.flags.logger") as fake_logger:
+        assert env_flag("SOME_FLAG", default=True) is True
+    fake_logger.warning.assert_called_once()
+
+
+def test_validate_production_security_rejects_garbage_secure_cookie(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("SESSION_SECRET", "a-very-secret-value-32-bytes")
+    monkeypatch.setenv("WEB_UI_PASSWORD_HASH", "dummy-hash")
+    monkeypatch.setenv("WEB_UI_SECURE_COOKIE", "perhaps")
+    with pytest.raises(RuntimeError, match="must be a boolean"):
+        validate_production_security()
+
+
+@pytest.mark.parametrize("value", ["1", "yes", "on"])
+def test_session_cookie_secure_flag_uses_shared_truth_table(monkeypatch, value):
+    """Values that passed validation before must now also set the Secure flag."""
+    from starlette.responses import Response
+
+    from web.auth import auth_manager
+
+    monkeypatch.setenv("SESSION_SECRET", "a-very-secret-value-32-bytes")
+    monkeypatch.setenv("WEB_UI_SECURE_COOKIE", value)
+    response = Response()
+    auth_manager.create_session(response, "admin")
+    set_cookie = response.headers.get("set-cookie") or ""
+    assert "Secure" in set_cookie
+
+
+@pytest.mark.parametrize("value", ["1", "yes", "on", "true"])
+def test_rate_limiting_not_disabled_by_shared_truth_table(monkeypatch, value):
+    from web.rate_limit import rate_limiting_enabled
+
+    monkeypatch.delenv("DISABLE_RATE_LIMIT", raising=False)
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", value)
+    assert rate_limiting_enabled() is True
+
+
+def test_rate_limiting_garbage_stays_enabled(monkeypatch):
+    from web.rate_limit import rate_limiting_enabled
+
+    monkeypatch.delenv("DISABLE_RATE_LIMIT", raising=False)
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "perhaps")
+    assert rate_limiting_enabled() is True

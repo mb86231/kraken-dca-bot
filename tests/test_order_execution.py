@@ -196,7 +196,7 @@ def test_transient_failure_schedules_retry(executor: OrderExecutor, fake_api: _F
     fixed_now = utc_now()
     monkeypatch.setattr(oe_module, "utc_now", lambda: fixed_now)
 
-    fake_api.queue_error(Exception("HTTP Error 503: Service Unavailable"))
+    fake_api.queue_error(Exception("HTTP Error 429: Too Many Requests"))
     attempt = executor.submit_buy(pair="XBTCHF", amount=0.0001, price=50000.0, simulated=False)
 
     assert attempt.state == OrderState.FAILED_TRANSIENT.value
@@ -210,11 +210,58 @@ def test_transient_failure_schedules_retry(executor: OrderExecutor, fake_api: _F
     assert loaded.next_retry_at is not None
 
 
+def test_due_retry_is_deferred_while_paused(executor: OrderExecutor, fake_api: _FakeAPI, attempt_store: OrderAttemptStore, tx_store: TransactionStore, bot_state: BotState, monkeypatch):
+    """A persisted retry that comes due while the bot is paused must not submit."""
+    fixed_now = utc_now()
+    monkeypatch.setattr(oe_module, "utc_now", lambda: fixed_now)
+
+    fake_api.queue_error(Exception("HTTP Error 429: Too Many Requests"))
+    attempt = executor.submit_buy(pair="XBTCHF", amount=0.0001, price=50000.0, simulated=False)
+    assert attempt.state == OrderState.FAILED_TRANSIENT.value
+
+    executor.process_pending()
+    loaded = attempt_store.get(attempt.attempt_id)
+    assert loaded is not None
+    assert loaded.state == OrderState.RETRY_SCHEDULED.value
+
+    # Advance past the scheduled retry time, then pause before process_pending.
+    assert loaded.next_retry_at is not None
+    retry_at = datetime.fromisoformat(loaded.next_retry_at)
+    monkeypatch.setattr(oe_module, "utc_now", lambda: retry_at + timedelta(seconds=1))
+    bot_state.update(paused=True, status="paused")
+
+    executor.process_pending()
+    loaded = attempt_store.get(attempt.attempt_id)
+    assert loaded is not None
+    # Still scheduled, not executed, no Kraken submission, no transaction.
+    assert loaded.state == OrderState.RETRY_SCHEDULED.value
+    assert len(fake_api.place_calls) == 1  # only the original failed attempt
+    assert tx_store.get_transaction_count("XBTCHF") == 0
+
+    # Resuming lets the due retry fire on the next cycle.
+    bot_state.update(paused=False, status="running")
+    executor.process_pending()
+    loaded = attempt_store.get(attempt.attempt_id)
+    assert loaded is not None
+    assert loaded.state == OrderState.CONFIRMED.value
+    assert len(fake_api.place_calls) == 2
+    assert tx_store.get_transaction_count("XBTCHF") == 1
+
+
+def test_paused_state_rejects_placement(executor: OrderExecutor, fake_api: _FakeAPI, attempt_store: OrderAttemptStore, bot_state: BotState):
+    """The final placement gate rejects submissions while paused (defence in depth)."""
+    bot_state.update(paused=True, status="paused")
+    attempt = executor.submit_buy(pair="XBTCHF", amount=0.0001, price=50000.0, simulated=False)
+    assert attempt.state == OrderState.HOLD.value
+    assert "paused" in (attempt.final_outcome or "").lower()
+    assert len(fake_api.place_calls) == 0
+
+
 def test_retry_succeeds(executor: OrderExecutor, fake_api: _FakeAPI, attempt_store: OrderAttemptStore, tx_store: TransactionStore, monkeypatch):
     fixed_now = utc_now()
     monkeypatch.setattr(oe_module, "utc_now", lambda: fixed_now)
 
-    fake_api.queue_error(Exception("HTTP Error 502: Bad Gateway"))
+    fake_api.queue_error(Exception("HTTP Error 429: Too Many Requests"))
     attempt = executor.submit_buy(pair="XBTCHF", amount=0.0001, price=50000.0, simulated=False)
     assert attempt.state == OrderState.FAILED_TRANSIENT.value
 
@@ -235,6 +282,117 @@ def test_retry_succeeds(executor: OrderExecutor, fake_api: _FakeAPI, attempt_sto
     assert tx_store.get_transaction_count("XBTCHF") == 1
 
 
+def test_gateway_error_is_unknown_not_transient(executor: OrderExecutor, fake_api: _FakeAPI, attempt_store: OrderAttemptStore, monkeypatch):
+    """T4: 502/503/504 may mean Kraken accepted the order with a lost reply.
+    They must classify as UNKNOWN (reconcile before resubmit), not TRANSIENT
+    (blind retry)."""
+    monkeypatch.setattr(oe_module, "utc_now", lambda: utc_now())
+    fake_api.queue_error(Exception("HTTP Error 503: Service Unavailable"))
+
+    attempt = executor.submit_buy(pair="XBTCHF", amount=0.0001, price=50000.0, simulated=False)
+    assert attempt.state == OrderState.UNKNOWN.value
+    assert attempt.error_category == ErrorCategory.UNKNOWN.value
+    # UNKNOWN is not scheduled for a blind retry.
+    executor.process_pending()
+    loaded = attempt_store.get(attempt.attempt_id)
+    assert loaded is not None
+    assert loaded.state == OrderState.UNKNOWN.value
+    assert len(fake_api.place_calls) == 1
+
+
+def test_addorder_timeout_reconciles_without_resubmission(
+    tx_store: TransactionStore, attempt_store: OrderAttemptStore, bot_state: BotState, temp_dir: Path, monkeypatch
+):
+    """T1/T2 (integration): real KrakenAPI with mocked transport. First AddOrder
+    times out after simulated remote acceptance; reconciliation then finds the
+    order on Kraken and confirms it — with exactly ONE AddOrder request."""
+    import base64
+    import urllib.error
+    from unittest.mock import MagicMock, patch
+
+    from bot.api_client import KrakenAPI
+
+    config_path = temp_dir / "config.json"
+    config_path.write_text(json.dumps({
+        "trading_pair": "XBTCHF", "deposit_day": 15, "crypto_amount": 0.0001,
+        "dip_threshold_percent": 5.0, "poll_interval_seconds": 600, "buy_hour": 8,
+        "dip_buy_cooldown_hours": 24.0,
+    }))
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("DEMO_MODE", "false")
+    monkeypatch.setenv("LIVE_TRADING_ENABLED", "true")
+    monkeypatch.setenv("KRAKEN_API_KEY", "test-api-key")
+    monkeypatch.setenv("KRAKEN_API_SECRET", "test-api-secret")
+    config = Config(config_path=config_path)
+
+    secret = base64.b64encode(b"test-secret").decode()
+    real_api = KrakenAPI("test-key", secret)
+
+    addorder_calls: list[str] = []
+
+    def _transport(req, timeout=30):
+        data = (req.data or b"").decode()
+        url = req.full_url
+
+        def _resp(payload: bytes):
+            resp = MagicMock()
+            resp.read.return_value = payload
+            resp.__enter__ = MagicMock(return_value=resp)
+            resp.__exit__ = MagicMock(return_value=False)
+            return resp
+
+        if "ordertype=market" in data:
+            addorder_calls.append(data)
+            # Reply lost after Kraken accepted the order.
+            raise urllib.error.URLError(TimeoutError("timed out"))
+        if "userref=" in data:
+            # Reconciliation: Kraken knows the order as closed.
+            return _resp(
+                b'{"error": [], "result": {"ORDER-1": {"status": "closed", '
+                b'"txid": "ORDER-1", "price": "50000.0"}}}'
+            )
+        if url.endswith("/0/public/AssetPairs"):
+            return _resp(
+                b'{"error": [], "result": {"XBTCHF": {"ordermin": "0.0001", '
+                b'"costmin": "1", "lot_decimals": 8, "pair_decimals": 2}}}'
+            )
+        if url.endswith("/0/public/Ticker"):
+            return _resp(b'{"error": [], "result": {"XBTCHF": {"c": ["50000.0", "1.0"]}}}')
+        if url.endswith("/0/private/Balance"):
+            return _resp(b'{"error": [], "result": {"ZCHF": "100000.0"}}')
+        raise AssertionError(f"unexpected request: url={url} data={data}")
+
+    executor = OrderExecutor(
+        api=real_api,
+        store=tx_store,
+        attempt_store=attempt_store,
+        notifier=MagicMock(),
+        state=bot_state,
+        config=config,
+    )
+
+    fixed_now = utc_now()
+    monkeypatch.setattr(oe_module, "utc_now", lambda: fixed_now)
+
+    with patch("urllib.request.urlopen", side_effect=_transport):
+        attempt = executor.submit_buy(pair="XBTCHF", amount=0.0001, price=50000.0, simulated=False)
+
+    # Timeout after possible transmission -> UNKNOWN, not a blind retry.
+    assert attempt.state == OrderState.UNKNOWN.value
+    assert len(addorder_calls) == 1
+
+    # Reconciliation confirms from Kraken's view; no second AddOrder.
+    with patch("urllib.request.urlopen", side_effect=_transport):
+        executor.process_pending()
+
+    loaded = attempt_store.get(attempt.attempt_id)
+    assert loaded is not None
+    assert loaded.state == OrderState.CONFIRMED.value
+    assert loaded.kraken_ref == "ORDER-1"
+    assert len(addorder_calls) == 1  # still exactly one
+    assert tx_store.get_transaction_count("XBTCHF") == 1
+
+
 def test_permanent_failure_enters_hold(executor: OrderExecutor, fake_api: _FakeAPI, attempt_store: OrderAttemptStore, monkeypatch):
     fixed_now = utc_now()
     monkeypatch.setattr(oe_module, "utc_now", lambda: fixed_now)
@@ -252,7 +410,7 @@ def test_retries_exhausted_then_hold(executor: OrderExecutor, fake_api: _FakeAPI
 
     # All attempts fail transiently.
     def _always_fail(*_args, **_kwargs):
-        raise Exception("HTTP Error 504: Gateway Timeout")
+        raise Exception("HTTP Error 429: Too Many Requests")
 
     fake_api.place_market_order = _always_fail  # type: ignore[assignment]
 
@@ -379,7 +537,7 @@ def test_notifier_failure_does_not_hide_state(executor: OrderExecutor, fake_api:
 
     notifier_mock = cast(MagicMock, executor.notifier)
     notifier_mock.send.side_effect = Exception("Telegram unreachable")
-    fake_api.queue_error(Exception("HTTP Error 503: Service Unavailable"))
+    fake_api.queue_error(Exception("HTTP Error 429: Too Many Requests"))
     attempt = executor.submit_buy(pair="XBTCHF", amount=0.0001, price=50000.0, simulated=False)
 
     assert attempt.state == OrderState.FAILED_TRANSIENT.value

@@ -156,6 +156,22 @@ def _load_allowed_chat_ids() -> list[str]:
     return [chat_id] if chat_id.lstrip("-").isdigit() else []
 
 
+def _load_allowed_user_ids() -> list[str]:
+    """Telegram user IDs allowed to issue commands and confirmations.
+
+    ``TELEGRAM_ALLOWED_USER_IDS`` (comma separated) wins; otherwise the
+    secrets store value is used. When set, only these users can drive the
+    bot even in group chats. When empty, commands are only accepted in
+    private chats — where the sender is by definition the chat owner — so
+    group members cannot issue commands or confirm actions.
+    """
+    raw = os.environ.get("TELEGRAM_ALLOWED_USER_IDS", "").strip()
+    if not raw:
+        values = SecretsStore().resolve("telegram")
+        raw = (values.get("allowed_user_ids") or "").strip()
+    return [u.strip() for u in raw.split(",") if u.strip().lstrip("-").isdigit()]
+
+
 def _fmt_fiat(value: float | None, currency: str = "") -> str:
     if value is None:
         return "—"
@@ -187,6 +203,7 @@ class TelegramCommandBot:
         values = SecretsStore().resolve("telegram")
         self.bot_token = (values.get("bot_token") or "").strip()
         self.allowed_chat_ids = _load_allowed_chat_ids()
+        self.allowed_user_ids = _load_allowed_user_ids()
         self._explicitly_disabled = os.environ.get("TELEGRAM_COMMANDS_ENABLED", "").lower() in (
             "false", "0", "no", "off",
         )
@@ -213,6 +230,12 @@ class TelegramCommandBot:
         )
         self._thread.start()
         print(f"Telegram command bot enabled (allowed chats: {len(self.allowed_chat_ids)}).")
+        if not self.allowed_user_ids:
+            print(
+                "Telegram command bot: no TELEGRAM_ALLOWED_USER_IDS set — only private "
+                "chats can issue commands; group chats are ignored. Set "
+                "TELEGRAM_ALLOWED_USER_IDS to allow specific users in groups."
+            )
         return True
 
     def stop(self) -> None:
@@ -247,6 +270,18 @@ class TelegramCommandBot:
 
     # ------------------------------------------------------------------ updates
 
+    def _sender_allowed(self, chat: dict[str, Any], user_id: str) -> bool:
+        """Whether the sender may drive the bot.
+
+        With an explicit user allowlist only listed user IDs count. Without
+        one, only private chats are accepted: in a private chat the sender
+        is by definition the chat owner, whereas in a group any member
+        could otherwise issue commands or confirm actions.
+        """
+        if self.allowed_user_ids:
+            return user_id in self.allowed_user_ids
+        return chat.get("type") == "private"
+
     def _handle_update(self, update: dict[str, Any]) -> None:
         if "callback_query" in update:
             self._handle_callback(update["callback_query"])
@@ -256,14 +291,21 @@ class TelegramCommandBot:
         chat_id = str(chat.get("id", ""))
         if chat_id not in self.allowed_chat_ids:
             return  # silently ignore unknown chats
+        user_id = str((message.get("from") or {}).get("id", ""))
+        if not self._sender_allowed(chat, user_id):
+            return  # silently ignore disallowed senders
         text = (message.get("text") or "").strip()
         if not text:
             return
-        self._handle_command(chat_id, text)
+        self._handle_command(chat_id, user_id, text)
 
     def _handle_callback(self, callback: dict[str, Any]) -> None:
-        chat_id = str((callback.get("message") or {}).get("chat", {}).get("id", ""))
+        chat = (callback.get("message") or {}).get("chat") or {}
+        chat_id = str(chat.get("id", ""))
         if chat_id not in self.allowed_chat_ids:
+            return
+        user_id = str((callback.get("from") or {}).get("id", ""))
+        if not self._sender_allowed(chat, user_id):
             return
         if self._api is not None:
             try:
@@ -275,14 +317,19 @@ class TelegramCommandBot:
         if len(parts) != 3 or parts[0] != "tg":
             return
         decision, token = parts[1], parts[2]
-        pending = self._pending.pop(token, None)
-        if (
-            pending is None
-            or pending["chat_id"] != chat_id
-            or pending["expires"] < time.monotonic()
-        ):
+        pending = self._pending.get(token)
+        if pending is None:
             self._send(chat_id, "⌛ That confirmation expired. Please run the command again.")
             return
+        # Bind confirmations to the user who requested the action.
+        if pending.get("user_id") not in (None, user_id):
+            self._send(chat_id, "🔒 Only the user who requested this action can confirm it.")
+            return
+        if pending["chat_id"] != chat_id or pending["expires"] < time.monotonic():
+            self._pending.pop(token, None)
+            self._send(chat_id, "⌛ That confirmation expired. Please run the command again.")
+            return
+        self._pending.pop(token, None)
         if decision != "ok":
             self._audit("telegram_action_cancelled", {"action": pending["action"]}, chat_id)
             self._send(chat_id, "❌ Cancelled.")
@@ -301,7 +348,7 @@ class TelegramCommandBot:
         window.append(now)
         return len(window) > self.max_commands_per_minute
 
-    def _handle_command(self, chat_id: str, text: str) -> None:
+    def _handle_command(self, chat_id: str, user_id: str, text: str) -> None:
         if self._rate_limited(chat_id):
             self._send(chat_id, "⏳ Slow down — one command at a time.")
             return
@@ -326,7 +373,7 @@ class TelegramCommandBot:
             return
         self._audit("telegram_command", {"command": command}, chat_id)
         try:
-            text_out, keyboard = handler(chat_id, args)
+            text_out, keyboard = handler(chat_id, user_id, args)
         except Exception as e:
             self._send(chat_id, f"⚠️ Error: {redact_sensitive(str(e))[:300]}")
             return
@@ -334,10 +381,10 @@ class TelegramCommandBot:
 
     # ------------------------------------------------------------- command impls
 
-    def _cmd_help(self, chat_id: str, args: list[str]) -> tuple[str, None]:
+    def _cmd_help(self, chat_id: str, user_id: str, args: list[str]) -> tuple[str, None]:
         return HELP_TEXT, None
 
-    def _cmd_status(self, chat_id: str, args: list[str]) -> tuple[str, None]:
+    def _cmd_status(self, chat_id: str, user_id: str, args: list[str]) -> tuple[str, None]:
         app = self.app
         pair = app.config.trading_pair
         total_amount, avg_price, last_price, total_spent = app.store.get_statistics(pair)
@@ -357,7 +404,7 @@ class TelegramCommandBot:
             lines.append(f"⚠️ Last error: {app.state.last_error[:120]}")
         return "\n".join(lines), None
 
-    def _cmd_price(self, chat_id: str, args: list[str]) -> tuple[str, None]:
+    def _cmd_price(self, chat_id: str, user_id: str, args: list[str]) -> tuple[str, None]:
         app = self.app
         current = app.api.get_ticker(app.config.trading_pair)
         reference = app.get_reference_price()
@@ -381,7 +428,7 @@ class TelegramCommandBot:
             ]
         return "\n".join(lines), None
 
-    def _cmd_budget(self, chat_id: str, args: list[str]) -> tuple[str, None]:
+    def _cmd_budget(self, chat_id: str, user_id: str, args: list[str]) -> tuple[str, None]:
         app = self.app
         limit = app.config.max_monthly_amount
         currency = app.get_fiat_currency()
@@ -398,7 +445,7 @@ class TelegramCommandBot:
             None,
         )
 
-    def _cmd_last(self, chat_id: str, args: list[str]) -> tuple[str, None]:
+    def _cmd_last(self, chat_id: str, user_id: str, args: list[str]) -> tuple[str, None]:
         app = self.app
         try:
             count = min(int(args[0]), 10) if args else 3
@@ -417,7 +464,7 @@ class TelegramCommandBot:
             lines.append(f"{when} — {t.amount:.8f} @ {t.price:,.2f} ({label})")
         return "\n".join(lines), None
 
-    def _cmd_alerts(self, chat_id: str, args: list[str]) -> tuple[str, None]:
+    def _cmd_alerts(self, chat_id: str, user_id: str, args: list[str]) -> tuple[str, None]:
         alerts = safe_load_json(self._alerts_path)
         if not isinstance(alerts, list):
             alerts = []
@@ -432,11 +479,12 @@ class TelegramCommandBot:
             lines.append(f"… and {len(active) - 5} more (see dashboard).")
         return "\n".join(lines), None
 
-    def _confirm_keyboard(self, chat_id: str, action: str, description: str, over_budget: bool = False) -> dict[str, Any]:
+    def _confirm_keyboard(self, chat_id: str, user_id: str, action: str, description: str, over_budget: bool = False) -> dict[str, Any]:
         token = uuid.uuid4().hex
         self._pending[token] = {
             "action": action,
             "chat_id": chat_id,
+            "user_id": user_id,
             "expires": time.monotonic() + CONFIRM_TTL_SECONDS,
             "over_budget": over_budget,
         }
@@ -453,7 +501,7 @@ class TelegramCommandBot:
             ]
         }
 
-    def _cmd_buy(self, chat_id: str, args: list[str]) -> tuple[str, dict[str, Any]]:
+    def _cmd_buy(self, chat_id: str, user_id: str, args: list[str]) -> tuple[str, dict[str, Any]]:
         app = self.app
         currency = app.get_fiat_currency()
         try:
@@ -469,7 +517,7 @@ class TelegramCommandBot:
                 app.config.trading_pair, app.config.deposit_day, app.config.buy_hour
             )
             over_budget = spent + cost > app.config.max_monthly_amount
-        keyboard = self._confirm_keyboard(chat_id, "buy", f"manual buy ~{amount:.8f}", over_budget=over_budget)
+        keyboard = self._confirm_keyboard(chat_id, user_id, "buy", f"manual buy ~{amount:.8f}", over_budget=over_budget)
         warning = ""
         if over_budget:
             warning = (
@@ -482,12 +530,12 @@ class TelegramCommandBot:
             keyboard,
         )
 
-    def _cmd_pause(self, chat_id: str, args: list[str]) -> tuple[str, dict[str, Any]]:
-        keyboard = self._confirm_keyboard(chat_id, "pause", "pause the bot")
+    def _cmd_pause(self, chat_id: str, user_id: str, args: list[str]) -> tuple[str, dict[str, Any]]:
+        keyboard = self._confirm_keyboard(chat_id, user_id, "pause", "pause the bot")
         return "⏸ Pause the bot? No buys will run while paused.", keyboard
 
-    def _cmd_resume(self, chat_id: str, args: list[str]) -> tuple[str, dict[str, Any]]:
-        keyboard = self._confirm_keyboard(chat_id, "resume", "resume the bot")
+    def _cmd_resume(self, chat_id: str, user_id: str, args: list[str]) -> tuple[str, dict[str, Any]]:
+        keyboard = self._confirm_keyboard(chat_id, user_id, "resume", "resume the bot")
         return "▶️ Resume the bot?", keyboard
 
     # ------------------------------------------------------- confirmed actions

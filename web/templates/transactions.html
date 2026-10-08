@@ -78,17 +78,19 @@
       const strategyLabel = (t.strategy === 'dynamic' && t.dynamic_tier != null)
         ? `dynamic ${t.dynamic_tier}%`
         : t.strategy;
-      tr.innerHTML = `
-        <td>${formatDatetime(t.date)}</td>
-        <td>${t.trading_pair}</td>
-        <td>${formatCrypto(t.amount)}</td>
-        <td>${formatCurrency(t.price)}</td>
-        <td>${formatCurrency(t.fee)}</td>
-        <td>${formatCurrency(t.total_cost)}</td>
-        <td><span class="badge ${t.strategy === 'dip' ? 'warn' : 'ok'}">${strategyLabel}</span></td>
-        <td>${t.order_id}</td>
-        <td><span class="badge ${t.status === 'filled' ? 'ok' : 'error'}">${t.status}</span></td>
-      `;
+      tr.appendChild(el('td', null, formatDatetime(t.date)));
+      tr.appendChild(el('td', null, t.trading_pair));
+      tr.appendChild(el('td', null, formatCrypto(t.amount)));
+      tr.appendChild(el('td', null, formatCurrency(t.price)));
+      tr.appendChild(el('td', null, formatCurrency(t.fee)));
+      tr.appendChild(el('td', null, formatCurrency(t.total_cost)));
+      const strategyTd = document.createElement('td');
+      strategyTd.appendChild(el('span', `badge ${t.strategy === 'dip' ? 'warn' : 'ok'}`, strategyLabel));
+      tr.appendChild(strategyTd);
+      tr.appendChild(el('td', null, t.order_id));
+      const statusTd = document.createElement('td');
+      statusTd.appendChild(el('span', `badge ${t.status === 'filled' ? 'ok' : 'error'}`, t.status));
+      tr.appendChild(statusTd);
       tbody.appendChild(tr);
     });
 

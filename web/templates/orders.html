@@ -64,32 +64,48 @@
       tbody.innerHTML = '<tr><td colspan="9" class="empty">No order attempts found.</td></tr>';
       return;
     }
-    tbody.innerHTML = data.orders.slice().reverse().map(o => `
-      <tr>
-        <td>${new Date(o.created_at).toLocaleString()}</td>
-        <td>${o.strategy}</td>
-        <td>${Number(o.amount).toFixed(8)}</td>
-        <td>${Number(o.price).toFixed(2)}</td>
-        <td><span class="badge ${o.state.toLowerCase()}">${o.state}</span></td>
-        <td>${o.attempt_number}</td>
-        <td>${o.next_retry_at ? new Date(o.next_retry_at).toLocaleString() : '—'}</td>
-        <td>${o.final_outcome || o.error_message || '—'}</td>
-        <td>
-          ${o.state === 'HOLD'
-            ? `<div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-                 <button class="btn btn-small btn-secondary" data-order-action="acknowledge" data-order-id="${o.attempt_id}" title="Mark as reviewed; allows new orders but does not retry this attempt">Acknowledge</button>
-                 <button class="btn btn-small btn-danger" data-order-action="cancel" data-order-id="${o.attempt_id}">Cancel</button>
-               </div>`
-            : o.state === 'UNKNOWN'
-            ? `<div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-                 <button class="btn btn-small btn-success" data-order-action="confirm" data-order-id="${o.attempt_id}" title="Order reached Kraken; record it as confirmed">Confirm</button>
-                 <button class="btn btn-small btn-secondary" data-order-action="retry" data-order-id="${o.attempt_id}">Retry</button>
-                 <button class="btn btn-small btn-danger" data-order-action="cancel" data-order-id="${o.attempt_id}">Cancel</button>
-               </div>`
-            : '—'}
-        </td>
-      </tr>
-    `).join('');
+    tbody.innerHTML = '';
+    data.orders.slice().reverse().forEach(o => {
+      const tr = document.createElement('tr');
+      tr.appendChild(el('td', null, new Date(o.created_at).toLocaleString()));
+      tr.appendChild(el('td', null, o.strategy));
+      tr.appendChild(el('td', null, Number(o.amount).toFixed(8)));
+      tr.appendChild(el('td', null, Number(o.price).toFixed(2)));
+      const stateTd = document.createElement('td');
+      stateTd.appendChild(el('span', `badge ${String(o.state).toLowerCase()}`, o.state));
+      tr.appendChild(stateTd);
+      tr.appendChild(el('td', null, o.attempt_number));
+      tr.appendChild(el('td', null, o.next_retry_at ? new Date(o.next_retry_at).toLocaleString() : '—'));
+      tr.appendChild(el('td', null, o.final_outcome || o.error_message || '—'));
+      const actionsTd = document.createElement('td');
+      const actions = document.createElement('div');
+      actions.style.display = 'flex';
+      actions.style.gap = '0.5rem';
+      actions.style.flexWrap = 'wrap';
+      const addAction = (label, action, className, title) => {
+        const btn = el('button', `btn btn-small ${className}`, label);
+        btn.type = 'button';
+        btn.dataset.orderAction = action;
+        btn.dataset.orderId = o.attempt_id;
+        if (title) btn.title = title;
+        actions.appendChild(btn);
+      };
+      if (o.state === 'HOLD') {
+        addAction('Acknowledge', 'acknowledge', 'btn-secondary', 'Mark as reviewed; allows new orders but does not retry this attempt');
+        addAction('Cancel', 'cancel', 'btn-danger', null);
+      } else if (o.state === 'UNKNOWN') {
+        addAction('Confirm', 'confirm', 'btn-success', 'Order reached Kraken; record it as confirmed');
+        addAction('Retry', 'retry', 'btn-secondary', null);
+        addAction('Cancel', 'cancel', 'btn-danger', null);
+      }
+      if (actions.childElementCount) {
+        actionsTd.appendChild(actions);
+      } else {
+        actionsTd.textContent = '—';
+      }
+      tr.appendChild(actionsTd);
+      tbody.appendChild(tr);
+    });
   }
 
   document.getElementById('order-filter').addEventListener('change', loadOrders);

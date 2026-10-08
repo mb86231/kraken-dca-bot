@@ -734,9 +734,11 @@ class KrakenDCA:
             last_dip_buy_time = None
 
             while not self._stop_event.is_set():
+                # Apply runtime overrides (stop/pause/manual cycle) before any
+                # pending order work, so a pause takes effect before retries.
+                self._check_runtime_overrides()
                 # Advance pending order retries and reconciliation without blocking.
                 self.order_executor.process_pending()
-                self._check_runtime_overrides()
                 if self.state.paused:
                     self.state.update(status="paused")
                     self.write_health()

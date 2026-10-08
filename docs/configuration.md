@@ -203,6 +203,7 @@ Copy `.env.example` to `.env` and fill in real values. `.env` is in
 | `SESSION_SECRET` | Strong random value for signing session cookies. |
 | `OIDC_CLIENT_ID` | OIDC client ID (optional). |
 | `OIDC_CLIENT_SECRET` | OIDC client secret (optional). |
+| `OIDC_ALLOWED_SUBJECTS` | Comma-separated identities (sub, username, or email) allowed to log in via OIDC. **Fail closed: when OIDC is enabled and this is empty, no OIDC login is accepted.** |
 
 ### Runtime toggles and non-secret settings
 
@@ -241,7 +242,9 @@ Copy `.env.example` to `.env` and fill in real values. `.env` is in
 | `ORDER_RECONCILE_INTERVAL_SECONDS` | `30` | Minimum seconds between reconciliation queries. |
 | `PREFLIGHT_FEE_BUFFER_PERCENT` | `0.5` | Extra safety margin used by the optional preflight script. |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | `123456,-789` | Comma-separated chat IDs allowed to send Telegram commands. Defaults to `TELEGRAM_CHAT_ID`. |
+| `TELEGRAM_ALLOWED_USER_IDS` | `123456` | Comma-separated Telegram user IDs allowed to issue commands/confirmations. When unset, only **private chats** are accepted — group members cannot drive the bot. |
 | `TELEGRAM_COMMANDS_ENABLED` | `true` / `false` | Master switch for the interactive Telegram command bot. |
+| `SESSIONS_PATH` | `data/sessions.json` | Revocable server-side session store (next to the secrets file by default). |
 
 ### Telegram command bot
 
@@ -255,8 +258,13 @@ Security properties:
 
 - Only chat IDs in `TELEGRAM_ALLOWED_CHAT_IDS` (or the notification chat ID)
   are served; unknown chats are silently ignored.
+- Only the sender may drive the bot: with `TELEGRAM_ALLOWED_USER_IDS` set,
+  only those Telegram user IDs are accepted (even in group chats). Without
+  it, only private chats are accepted — a group member cannot issue commands
+  or press the confirmation button for someone else's action.
 - `/buy`, `/pause`, and `/resume` require a one-time inline confirmation that
-  expires after 60 seconds and cannot be replayed.
+  expires after 60 seconds, is bound to the requesting user, and cannot be
+  replayed.
 - Per-chat rate limiting (2 s between commands, 20/minute).
 - Every command and executed action is written to the audit log.
 - Secrets are never accepted or printed by any command.

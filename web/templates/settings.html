@@ -410,18 +410,53 @@
 
   function createTierRow(tier) {
     const row = document.createElement('tr');
-    row.innerHTML = `
-      <td><input type="number" step="0.1" class="tier-threshold" data-key="threshold_percent" value="${tier.threshold_percent}"></td>
-      <td><input type="number" step="0.00000001" class="tier-amount" data-key="amount" value="${tier.amount}"></td>
-      <td class="tier-value muted">—</td>
-      <td><input type="checkbox" class="tier-enabled" data-key="enabled" ${tier.enabled ? 'checked' : ''}></td>
-      <td class="muted">${tierExample(tier.threshold_percent)}</td>
-      <td><button type="button" class="btn btn-small btn-danger remove-tier">Remove</button></td>
-    `;
-    row.querySelector('.remove-tier').addEventListener('click', () => {
+
+    const thresholdInput = document.createElement('input');
+    thresholdInput.type = 'number';
+    thresholdInput.step = '0.1';
+    thresholdInput.className = 'tier-threshold';
+    thresholdInput.dataset.key = 'threshold_percent';
+    thresholdInput.value = tier.threshold_percent;
+    const thresholdTd = document.createElement('td');
+    thresholdTd.appendChild(thresholdInput);
+
+    const amountInput = document.createElement('input');
+    amountInput.type = 'number';
+    amountInput.step = '0.00000001';
+    amountInput.className = 'tier-amount';
+    amountInput.dataset.key = 'amount';
+    amountInput.value = tier.amount;
+    const amountTd = document.createElement('td');
+    amountTd.appendChild(amountInput);
+
+    const valueTd = el('td', 'tier-value muted', '—');
+
+    const enabledInput = document.createElement('input');
+    enabledInput.type = 'checkbox';
+    enabledInput.className = 'tier-enabled';
+    enabledInput.dataset.key = 'enabled';
+    enabledInput.checked = !!tier.enabled;
+    const enabledTd = document.createElement('td');
+    enabledTd.appendChild(enabledInput);
+
+    const exampleTd = el('td', 'muted', tierExample(tier.threshold_percent));
+
+    const removeBtn = el('button', 'btn btn-small btn-danger remove-tier', 'Remove');
+    removeBtn.type = 'button';
+    const removeTd = document.createElement('td');
+    removeTd.appendChild(removeBtn);
+
+    row.appendChild(thresholdTd);
+    row.appendChild(amountTd);
+    row.appendChild(valueTd);
+    row.appendChild(enabledTd);
+    row.appendChild(exampleTd);
+    row.appendChild(removeTd);
+
+    removeBtn.addEventListener('click', () => {
       row.remove();
     });
-    row.querySelector('.tier-amount').addEventListener('input', () => updateTierValue(row));
+    amountInput.addEventListener('input', () => updateTierValue(row));
     updateTierValue(row);
     return row;
   }
@@ -610,20 +645,33 @@
 
   // Authentication status + forms
   async function loadAuthStatus() {
-    const el = document.getElementById('auth-status');
+    const statusEl = document.getElementById('auth-status');
     try {
       const data = await apiGet('/api/settings/auth');
       const src = (f) => f.source === 'environment' ? 'environment' : (f.source === 'secrets_file' ? 'secrets store' : 'not set');
-      const badge = (on) => `<span class="badge ${on ? 'ok' : 'warn'}">${on ? 'On' : 'Off'}</span>`;
-      el.innerHTML = `
-        <div class="grid grid-2">
-          <div><strong>Local login user:</strong> ${data.local.username} (${data.local.username_source})</div>
-          <div><strong>Password:</strong> ${data.local.password_hash.set ? 'set (' + src(data.local.password_hash) + ')' : 'not set'}</div>
-          <div><strong>Session secret:</strong> ${data.local.session_secret.set ? 'set (' + src(data.local.session_secret) + ')' : 'not set'}</div>
-          <div><strong>Authentik (OIDC):</strong> ${badge(data.oidc_enabled)} ${data.oidc.fields.issuer_url.value ? '— ' + data.oidc.fields.issuer_url.value : ''}</div>
-          <div><strong>OIDC client:</strong> ${data.oidc.fields.client_id.set ? data.oidc.fields.client_id.value + ' (' + src(data.oidc.fields.client_id) + ')' : 'not set'}</div>
-          <div><strong>OIDC client secret:</strong> ${data.oidc.fields.client_secret.set ? 'set (' + src(data.oidc.fields.client_secret) + ')' : 'not set'}</div>
-        </div>`;
+      statusEl.innerHTML = '';
+      const grid = document.createElement('div');
+      grid.className = 'grid grid-2';
+      const addInfo = (label, text) => {
+        const div = document.createElement('div');
+        div.appendChild(el('strong', null, label));
+        div.appendChild(document.createTextNode(' ' + text));
+        grid.appendChild(div);
+      };
+      addInfo('Local login user:', `${data.local.username} (${data.local.username_source})`);
+      addInfo('Password:', data.local.password_hash.set ? 'set (' + src(data.local.password_hash) + ')' : 'not set');
+      addInfo('Session secret:', data.local.session_secret.set ? 'set (' + src(data.local.session_secret) + ')' : 'not set');
+      const oidcDiv = document.createElement('div');
+      oidcDiv.appendChild(el('strong', null, 'Authentik (OIDC):'));
+      oidcDiv.appendChild(document.createTextNode(' '));
+      oidcDiv.appendChild(el('span', `badge ${data.oidc_enabled ? 'ok' : 'warn'}`, data.oidc_enabled ? 'On' : 'Off'));
+      if (data.oidc.fields.issuer_url.value) {
+        oidcDiv.appendChild(document.createTextNode(' — ' + data.oidc.fields.issuer_url.value));
+      }
+      grid.appendChild(oidcDiv);
+      addInfo('OIDC client:', data.oidc.fields.client_id.set ? data.oidc.fields.client_id.value + ' (' + src(data.oidc.fields.client_id) + ')' : 'not set');
+      addInfo('OIDC client secret:', data.oidc.fields.client_secret.set ? 'set (' + src(data.oidc.fields.client_secret) + ')' : 'not set');
+      statusEl.appendChild(grid);
 
       // Prefill the forms with the effective (non-secret) values.
       document.getElementById('web_auth_username').value = data.local.username || '';
@@ -633,7 +681,7 @@
       document.getElementById('oidc_redirect_uri').value = data.oidc.fields.redirect_uri.value || '';
       document.getElementById('oidc_scopes').value = data.oidc.fields.scopes.value || '';
     } catch (err) {
-      el.textContent = 'Error: ' + err.message;
+      statusEl.textContent = 'Error: ' + err.message;
     }
   }
 
@@ -736,32 +784,40 @@
 
   // Preflight checks
   async function loadPreflightChecks() {
-    const el = document.getElementById('preflight-checks-list');
+    const listEl = document.getElementById('preflight-checks-list');
     try {
       const data = await apiGet('/api/preflight/checks');
       const byCategory = {};
       for (const check of data.checks) {
         (byCategory[check.category] = byCategory[check.category] || []).push(check);
       }
-      el.innerHTML = Object.entries(byCategory).map(([category, checks]) => `
-        <h3 style="font-size: 0.9rem; margin: 0.75rem 0 0.4rem; text-transform: capitalize;">${escapeHtml(category)}</h3>
-        ${checks.map(check => `
-          <label style="display:block; padding: 0.15rem 0; font-size: 0.9rem;">
-            <input type="checkbox" class="preflight-check" data-name="${escapeHtml(check.name)}" ${check.enabled ? 'checked' : ''}>
-            <strong>${escapeHtml(check.name)}</strong>
-            <span class="muted">— ${escapeHtml(check.description)}</span>
-          </label>
-        `).join('')}
-      `).join('');
+      listEl.innerHTML = '';
+      for (const [category, checks] of Object.entries(byCategory)) {
+        const heading = el('h3', null, category);
+        heading.style.fontSize = '0.9rem';
+        heading.style.margin = '0.75rem 0 0.4rem';
+        heading.style.textTransform = 'capitalize';
+        listEl.appendChild(heading);
+        for (const check of checks) {
+          const label = document.createElement('label');
+          label.style.display = 'block';
+          label.style.padding = '0.15rem 0';
+          label.style.fontSize = '0.9rem';
+          const box = document.createElement('input');
+          box.type = 'checkbox';
+          box.className = 'preflight-check';
+          box.dataset.name = check.name;
+          box.checked = !!check.enabled;
+          label.appendChild(box);
+          label.appendChild(el('strong', null, check.name));
+          label.appendChild(document.createTextNode(' '));
+          label.appendChild(el('span', 'muted', '— ' + check.description));
+          listEl.appendChild(label);
+        }
+      }
     } catch (err) {
-      el.textContent = 'Error: ' + err.message;
+      listEl.textContent = 'Error: ' + err.message;
     }
-  }
-
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text == null ? '' : String(text);
-    return div.innerHTML;
   }
 
   document.getElementById('save-preflight-checks').addEventListener('click', async () => {
@@ -780,19 +836,28 @@
   // Health
   async function loadHealth() {
     const data = await apiGet('/api/health');
-    document.getElementById('health-bot').innerHTML = `<span class="badge ${data.bot_process ? 'ok' : 'error'}">${data.bot_process ? 'Healthy' : 'Down'}</span>`;
-    document.getElementById('health-exchange').innerHTML = `<span class="badge ${data.exchange_api ? 'ok' : 'warn'}">${data.exchange_api ? 'Connected' : 'Disconnected'}</span>`;
-    document.getElementById('health-telegram').innerHTML = `<span class="badge ${data.telegram_api ? 'ok' : 'warn'}">${data.telegram_api ? 'Configured' : 'Not configured'}</span>`;
-    document.getElementById('health-details').innerHTML = `
-      <div class="grid grid-2">
-        <div><strong>Version:</strong> ${data.version}</div>
-        <div><strong>Runtime:</strong> ${data.runtime}</div>
-        <div><strong>Server Time:</strong> ${data.server_time}</div>
-        <div><strong>Timezone:</strong> ${data.timezone}</div>
-        <div><strong>Last Price Update:</strong> ${data.last_price_update}</div>
-        <div><strong>Last Order:</strong> ${data.last_order}</div>
-      </div>
-    `;
+    document.getElementById('health-bot').replaceChildren(el('span', `badge ${data.bot_process ? 'ok' : 'error'}`, data.bot_process ? 'Healthy' : 'Down'));
+    document.getElementById('health-exchange').replaceChildren(el('span', `badge ${data.exchange_api ? 'ok' : 'warn'}`, data.exchange_api ? 'Connected' : 'Disconnected'));
+    document.getElementById('health-telegram').replaceChildren(el('span', `badge ${data.telegram_api ? 'ok' : 'warn'}`, data.telegram_api ? 'Configured' : 'Not configured'));
+    const details = document.getElementById('health-details');
+    details.innerHTML = '';
+    const grid = document.createElement('div');
+    grid.className = 'grid grid-2';
+    const rows = [
+      ['Version:', data.version],
+      ['Runtime:', data.runtime],
+      ['Server Time:', data.server_time],
+      ['Timezone:', data.timezone],
+      ['Last Price Update:', data.last_price_update],
+      ['Last Order:', data.last_order],
+    ];
+    for (const [label, value] of rows) {
+      const div = document.createElement('div');
+      div.appendChild(el('strong', null, label));
+      div.appendChild(document.createTextNode(' ' + (value ?? '—')));
+      grid.appendChild(div);
+    }
+    details.appendChild(grid);
   }
 
   (async () => {

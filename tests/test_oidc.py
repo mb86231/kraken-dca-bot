@@ -45,6 +45,9 @@ def _set_test_env(temp_dir: Path, oidc_enabled: bool = True):
     os.environ["OIDC_CLIENT_SECRET"] = CLIENT_SECRET
     os.environ["OIDC_REDIRECT_URI"] = REDIRECT_URI
     os.environ["OIDC_SCOPES"] = "openid email profile"
+    # The mock provider issues tokens for this identity; the allowlist entry
+    # matches preferred_username (see mock_oidc_provider claims).
+    os.environ["OIDC_ALLOWED_SUBJECTS"] = "testuser"
 
     config_path = temp_dir / "config.json"
     config_path.write_text(
@@ -390,6 +393,7 @@ def _build_token_response(private_key: Any, kid: str | None, alg: str = "RS256")
         "aud": CLIENT_ID,
         "sub": "user-123",
         "email": "user@example.com",
+        "preferred_username": "testuser",
         "nonce": "test-nonce",
         "iat": int(datetime.now(timezone.utc).timestamp()),
         "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
@@ -480,3 +484,94 @@ def test_oidc_jwks_rotation_with_new_kid_is_accepted(oidc_client: TestClient):
         )
     assert callback.status_code == 303
     assert callback.headers["location"] == "/dashboard"
+
+
+# ---------------------------------------------------------------------------
+# F3: operator allowlist, fail closed
+# ---------------------------------------------------------------------------
+
+
+def _run_callback_flow(oidc_client: TestClient, responses: Dict[str, Any]) -> httpx.Response:
+    """Start a login flow and simulate the provider callback; return the callback response."""
+    with patch.object(oidc_provider, "_generate_nonce", return_value="test-nonce"), _mock_httpx(responses):
+        start = oidc_client.get("/login/oidc", follow_redirects=False)
+    assert start.status_code == 307
+
+    from urllib.parse import parse_qs, urlparse
+
+    state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
+    with _mock_httpx(responses):
+        return oidc_client.get(
+            "/auth/callback",
+            params={"code": "test-code", "state": state},
+            follow_redirects=False,
+        )
+
+
+def test_oidc_callback_denied_when_identity_not_on_allowlist(
+    oidc_client: TestClient, mock_oidc_provider, monkeypatch
+):
+    """F3: a valid token for an identity outside the allowlist gets no session."""
+    _, _, responses = mock_oidc_provider
+    monkeypatch.setenv("OIDC_ALLOWED_SUBJECTS", "someone-else")
+    callback = _run_callback_flow(oidc_client, responses)
+    assert callback.status_code == 403
+    assert "not authorized" in callback.text.lower()
+
+
+def test_oidc_login_fails_closed_without_allowlist(
+    oidc_client: TestClient, mock_oidc_provider, monkeypatch
+):
+    """F3: with no allowlist configured, OIDC login is denied outright."""
+    _, _, responses = mock_oidc_provider
+    monkeypatch.delenv("OIDC_ALLOWED_SUBJECTS", raising=False)
+    callback = _run_callback_flow(oidc_client, responses)
+    assert callback.status_code == 403
+
+
+def test_oidc_allowlist_matches_sub(oidc_client: TestClient, monkeypatch):
+    """Allowlist entries match sub, preferred_username and email."""
+    private_key, jwk = _generate_rsa_key_and_jwk(kid="allow-key")
+    discovery = _default_discovery()
+    responses = {
+        discovery["jwks_uri"]: MockResponse(json_data={"keys": [jwk]}),
+        f"{ISSUER_URL}.well-known/openid-configuration": MockResponse(json_data=discovery),
+        discovery["token_endpoint"]: lambda _url, _kwargs: _build_token_response(private_key, kid="allow-key"),
+    }
+    for entry in ("user-123", "user@example.com"):
+        monkeypatch.setenv("OIDC_ALLOWED_SUBJECTS", entry)
+        callback = _run_callback_flow(oidc_client, responses)
+        assert callback.status_code == 303, f"allowlist entry {entry!r} should be accepted"
+
+
+# ---------------------------------------------------------------------------
+# F8: required claims must be present, not just valid when present
+# ---------------------------------------------------------------------------
+
+
+def _token_response_without_claim(private_key: Any, missing: str) -> MockResponse:
+    claims = {
+        "iss": ISSUER_URL,
+        "aud": CLIENT_ID,
+        "sub": "user-123",
+        "email": "user@example.com",
+        "nonce": "test-nonce",
+        "iat": int(datetime.now(timezone.utc).timestamp()),
+        "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
+    }
+    claims.pop(missing, None)
+    return MockResponse(json_data={"id_token": _sign_id_token_with_header(private_key, claims, "claims-key")})
+
+
+@pytest.mark.parametrize("missing", ["iat", "sub", "exp"])
+def test_oidc_token_missing_required_claim_is_rejected(oidc_client: TestClient, missing: str):
+    """F8: PyJWT 'require' must reject tokens that omit exp/iat/sub entirely."""
+    private_key, jwk = _generate_rsa_key_and_jwk(kid="claims-key")
+    discovery = _default_discovery()
+    responses = {
+        discovery["jwks_uri"]: MockResponse(json_data={"keys": [jwk]}),
+        f"{ISSUER_URL}.well-known/openid-configuration": MockResponse(json_data=discovery),
+        discovery["token_endpoint"]: lambda _url, _kwargs: _token_response_without_claim(private_key, missing),
+    }
+    callback = _run_callback_flow(oidc_client, responses)
+    assert callback.status_code == 401

@@ -61,15 +61,17 @@
 
   function render(data) {
     const overall = data.overall || 'UNKNOWN';
-    statusEl.innerHTML = `<span class="badge ${statusClass(overall)}">${overall}</span>`;
+    statusEl.replaceChildren(el('span', `badge ${statusClass(overall)}`, overall));
 
     const ranAt = data.ran_at ? new Date(data.ran_at).toLocaleString() : '—';
     const expiresAt = data.expires_at ? new Date(data.expires_at).toLocaleString() : '—';
-    metaEl.innerHTML = `
-      Ran: <strong>${ranAt}</strong> &nbsp;|&nbsp;
-      Expires: <strong>${expiresAt}</strong> &nbsp;|&nbsp;
-      Live orders: <strong>${data.can_place_live_orders ? 'allowed' : 'blocked'}</strong>
-    `;
+    metaEl.textContent = '';
+    metaEl.append('Ran: ');
+    metaEl.appendChild(el('strong', null, ranAt));
+    metaEl.append('  |  Expires: ');
+    metaEl.appendChild(el('strong', null, expiresAt));
+    metaEl.append('  |  Live orders: ');
+    metaEl.appendChild(el('strong', null, data.can_place_live_orders ? 'allowed' : 'blocked'));
 
     let summaryHtml = '';
     if (data.failures && data.failures.length) {
@@ -84,19 +86,34 @@
     summaryEl.innerHTML = summaryHtml;
 
     const checks = data.checks || [];
+    bodyEl.innerHTML = '';
     if (checks.length === 0) {
-      bodyEl.innerHTML = '<tr><td colspan="5">No checks returned.</td></tr>';
+      const emptyTr = document.createElement('tr');
+      const emptyTd = el('td', null, 'No checks returned.');
+      emptyTd.colSpan = 5;
+      emptyTr.appendChild(emptyTd);
+      bodyEl.appendChild(emptyTr);
       return;
     }
-    bodyEl.innerHTML = checks.map(check => `
-      <tr class="check-${(check.status || '').toLowerCase()}">
-        <td><span class="badge ${statusClass(check.status)}">${statusIcon(check.status)} ${check.status}</span></td>
-        <td>${escapeHtml(check.name)}</td>
-        <td>${escapeHtml(check.category)}</td>
-        <td>${escapeHtml(check.message)}</td>
-        <td>${actionCell(check)}</td>
-      </tr>
-    `).join('');
+    for (const check of checks) {
+      const tr = document.createElement('tr');
+      tr.className = `check-${(check.status || '').toLowerCase()}`;
+      const statusTd = document.createElement('td');
+      statusTd.appendChild(el('span', `badge ${statusClass(check.status)}`, `${statusIcon(check.status)} ${check.status}`));
+      tr.appendChild(statusTd);
+      tr.appendChild(el('td', null, check.name));
+      tr.appendChild(el('td', null, check.category));
+      tr.appendChild(el('td', null, check.message));
+      const actionTd = document.createElement('td');
+      if (MANUAL_ACK_CHECKS.includes(check.name) && (check.status || '').toUpperCase() === 'WARN') {
+        const btn = el('button', 'btn btn-small btn-secondary', 'Acknowledge');
+        btn.type = 'button';
+        btn.dataset.ackCheck = check.name;
+        actionTd.appendChild(btn);
+      }
+      tr.appendChild(actionTd);
+      bodyEl.appendChild(tr);
+    }
     bodyEl.querySelectorAll('[data-ack-check]').forEach(btn => {
       btn.addEventListener('click', () => acknowledgeCheck(btn.dataset.ackCheck));
     });
@@ -106,11 +123,13 @@
   // (same as unchecking them in Settings → Preflight).
   const MANUAL_ACK_CHECKS = ['kraken_minimum_permissions', 'kraken_withdrawal_permission'];
 
-  function actionCell(check) {
-    if (MANUAL_ACK_CHECKS.includes(check.name) && (check.status || '').toUpperCase() === 'WARN') {
-      return `<button type="button" class="btn btn-small btn-secondary" data-ack-check="${escapeHtml(check.name)}">Acknowledge</button>`;
-    }
-    return '';
+  function showErrorRow(message) {
+    const tr = document.createElement('tr');
+    const td = el('td', 'text-danger', message);
+    td.colSpan = 5;
+    tr.appendChild(td);
+    bodyEl.replaceChildren(tr);
+    statusEl.replaceChildren(el('span', 'badge badge-danger', 'Error'));
   }
 
   async function acknowledgeCheck(name) {
@@ -131,12 +150,6 @@
     }
   }
 
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text || '';
-    return div.innerHTML;
-  }
-
   async function loadPreflight() {
     try {
       statusEl.innerHTML = '<span class="badge badge-loading">Loading…</span>';
@@ -144,8 +157,7 @@
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       render(await res.json());
     } catch (err) {
-      bodyEl.innerHTML = `<tr><td colspan="5" class="text-danger">Failed to load preflight: ${escapeHtml(err.message)}</td></tr>`;
-      statusEl.innerHTML = '<span class="badge badge-danger">Error</span>';
+      showErrorRow('Failed to load preflight: ' + err.message);
     }
   }
 
@@ -163,8 +175,7 @@
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       render(await res.json());
     } catch (err) {
-      bodyEl.innerHTML = `<tr><td colspan="5" class="text-danger">Failed to run preflight: ${escapeHtml(err.message)}</td></tr>`;
-      statusEl.innerHTML = '<span class="badge badge-danger">Error</span>';
+      showErrorRow('Failed to run preflight: ' + err.message);
     } finally {
       refreshBtn.disabled = false;
       refreshBtn.textContent = 'Refresh Checks';

@@ -136,5 +136,66 @@ def test_get_system_status_not_online():
             api.get_system_status()
 
 
+def _order_response(order_id: str = "ORDER-1"):
+    resp = MagicMock()
+    resp.read.return_value = (
+        b'{"error": [], "result": {"txid": ["' + order_id.encode() + b'"], " descr": {}}}'
+    )
+    resp.__enter__ = MagicMock(return_value=resp)
+    resp.__exit__ = MagicMock(return_value=False)
+    return resp
+
+
+def test_addorder_submitted_exactly_once_on_timeout():
+    """F1 regression: a timeout after Kraken accepted the order must NOT trigger
+    a transport-level retry of AddOrder. One place_market_order call = exactly
+    one HTTP request, even if a second attempt would have succeeded."""
+    import os
+    old_env = os.environ.get("APP_ENV")
+    os.environ["APP_ENV"] = "production"
+    try:
+        api = _make_api()
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            # First (and only allowed) request: reply lost after remote acceptance.
+            mock_urlopen.side_effect = [
+                urllib.error.URLError(TimeoutError("timed out")),
+                _order_response(),  # would succeed — must never be reached
+            ]
+            with patch("time.sleep"):
+                with pytest.raises(Exception, match="Connection Error"):
+                    api.place_market_order("XBTCHF", "0.0001", userref=42)
+        assert mock_urlopen.call_count == 1
+    finally:
+        if old_env is None:
+            os.environ.pop("APP_ENV", None)
+        else:
+            os.environ["APP_ENV"] = old_env
+
+
+def test_addorder_retries_rate_limit_then_succeeds():
+    """A 429 is a definitive rejection — retrying AddOrder is safe there."""
+    import os
+    old_env = os.environ.get("APP_ENV")
+    os.environ["APP_ENV"] = "production"
+    try:
+        api = _make_api()
+
+        class FakeRateLimitError(urllib.error.HTTPError):
+            def __init__(self):
+                super().__init__("url", 429, "Too Many Requests", {}, None)
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.side_effect = [FakeRateLimitError(), _order_response()]
+            with patch("time.sleep"):
+                result = api.place_market_order("XBTCHF", "0.0001", userref=42)
+        assert mock_urlopen.call_count == 2
+        assert result["txid"] == ["ORDER-1"]
+    finally:
+        if old_env is None:
+            os.environ.pop("APP_ENV", None)
+        else:
+            os.environ["APP_ENV"] = old_env
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

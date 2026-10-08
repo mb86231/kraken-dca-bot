@@ -285,6 +285,11 @@ class OrderExecutor:
             elif attempt.state == OrderState.RETRY_SCHEDULED.value:
                 retry_at = datetime.fromisoformat(attempt.next_retry_at) if attempt.next_retry_at else now
                 if now >= retry_at:
+                    if self.state is not None and self.state.paused:
+                        # Defer the retry while paused. Keep it RETRY_SCHEDULED
+                        # so it fires as soon as the bot resumes; reconciliation
+                        # of UNKNOWN attempts continues regardless.
+                        continue
                     self._execute(attempt)
 
             if attempt.state != before:
@@ -385,7 +390,11 @@ class OrderExecutor:
         if self.config is None or not self.config.live_trading_enabled:
             return False, "live trading is not enabled", {}
 
-        # Bot safety state.
+        # Bot safety state. Paused blocks both fresh submissions and retries;
+        # reconciliation of UNKNOWN attempts continues elsewhere.
+        if self.state is not None and self.state.paused:
+            return False, "bot is paused", {}
+
         if self.state is not None and self.state.status in ("stopped", "error", "hold"):
             return False, f"bot is in {self.state.status!r} state", {}
 
@@ -748,8 +757,13 @@ class OrderExecutor:
         http_match = re.search(r"http error (\d+)", msg)
         if http_match:
             code = int(http_match.group(1))
-            if code == 429 or code in (502, 503, 504):
+            if code == 429:
                 return ErrorCategory.TRANSIENT, str(exc)
+            if code in (502, 503, 504):
+                # Gateway errors are ambiguous for order submission: Kraken may
+                # have accepted the order and only the reply was lost. Treat as
+                # UNKNOWN so reconciliation runs before any resubmission.
+                return ErrorCategory.UNKNOWN, str(exc)
             if code in (400, 401, 403, 404):
                 return ErrorCategory.PERMANENT, str(exc)
 
