@@ -57,6 +57,13 @@ Deliberately strict, because a chat command can move money:
   notification chat ID, so command access is never broader than who already
   receives all notifications. Unknown chats are **silently ignored** — the
   bot does not even confirm its existence.
+- **Sender check (not just chat).** With `TELEGRAM_ALLOWED_USER_IDS`
+  (comma-separated Telegram user IDs) set, only those users may issue
+  commands or press confirmation buttons — even in a group chat. Without
+  it, only **private chats** are accepted: a group member cannot drive the
+  bot or confirm someone else's action. Inline confirmations are bound to
+  the user who requested them; a ✅/❌ press from another user is rejected
+  without consuming the pending action.
 - **One-time confirmations.** `/buy`, `/pause`, and `/resume` reply with
   inline ✅ / ❌ buttons backed by a random token that is single-use and
   expires after 60 seconds. Confirmations cannot be replayed or reused
@@ -86,6 +93,17 @@ TELEGRAM_ALLOWED_CHAT_IDS=111111,222222,-333333
 
 Group chats have negative IDs. Each operator is rate-limited independently
 and all of them appear in the audit log.
+
+To pin access to specific people regardless of which chat they use, set
+their Telegram user IDs (find yours via [@userinfobot](https://t.me/userinfobot)):
+
+```env
+TELEGRAM_ALLOWED_USER_IDS=444444,555555
+```
+
+Without `TELEGRAM_ALLOWED_USER_IDS`, the bot accepts **private chats only** —
+being added to a group does not grant its members any control, and group
+confirmations from anyone but the requester are rejected.
 
 ## Running several instances
 

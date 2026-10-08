@@ -21,7 +21,7 @@ Checklist to complete before enabling unattended live trading in production.
 - [ ] **Withdraw Funds** permission is disabled.
 - [ ] API key IP allowlist configured (recommended).
 - [ ] Telegram bot token and chat ID configured (strongly recommended).
-- [ ] Dashboard password hash generated with `scripts/generate_password_hash.py`.
+- [ ] Dashboard admin account created (first-run setup token from the container logs — or pre-seeded via `WEB_UI_USERNAME` / `WEB_UI_PASSWORD_HASH` from `scripts/generate_password_hash.py`).
 - [ ] Stable `SESSION_SECRET` generated (`secrets.token_hex(32)`).
 - [ ] `WEB_UI_SECURE_COOKIE=true` if serving over HTTPS.
 - [ ] OIDC configured and tested, or disabled (optional).

@@ -123,9 +123,17 @@ OIDC_CLIENT_ID=dca-bot-staging
 OIDC_CLIENT_SECRET=<secret-from-authentik>
 OIDC_REDIRECT_URI=https://staging-bot.example.com/auth/callback
 OIDC_SCOPES=openid email profile
+OIDC_ALLOWED_SUBJECTS=alice,bob@example.com
 ```
 
 `OIDC_REDIRECT_URI` can be omitted; the dashboard will infer it from the incoming `Host`/`X-Forwarded-*` headers as `/auth/callback`.
+
+`OIDC_ALLOWED_SUBJECTS` is **required in practice**: it is the
+comma-separated allow-list of identities (matched against the token's
+`sub`, `preferred_username` and `email`) that may log in. The login is
+**fail closed** — when OIDC is enabled and the allow-list is empty, *every*
+OIDC login is denied. Set it in the environment or in the dashboard
+(Settings → Authentication).
 
 ## Demo Mode
 
@@ -142,6 +150,10 @@ Then open `http://127.0.0.1:8000`.
 ## Reverse Proxy / HTTPS
 
 If you already have Nginx (or another proxy) running, configure it to forward to the host's IP on port `8003`. An example config is in `nginx/crypto-agent.conf`.
+
+> **Quick-start users** (`compose.public.yaml`, the prebuilt image): the
+> dashboard is published on port **8000**, not 8003, and loopback-only by
+> default — see *Public quick-start: exposing via reverse proxy* below.
 
 ### Required environment variables
 
@@ -226,5 +238,5 @@ ssh -L 8000:127.0.0.1:8000 user@bot-host
 - The dashboard shares the bot process. Web failures are isolated, but the dashboard is optional for this reason.
 - Most configuration changes saved in the dashboard call `config.reload()` and take effect immediately.
 - Changes to `trading_pair` or API credentials require a container restart to take full effect.
-- Telegram credentials are not persisted by the dashboard; update the container env file and restart.
+- Telegram credentials can be entered in the dashboard (Settings → API Keys) and are stored in the secrets store (`data/secrets.json`, mode 0600, excluded from backups); environment variables take precedence when set.
 - Pause/resume and manual "Buy Now" react within ~1 second because the trading loop waits on `state.wake()`.
