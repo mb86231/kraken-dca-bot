@@ -72,7 +72,8 @@ and `requirements-dev.txt` for the exact versions. Major dependencies include:
 ## How demo data is used
 
 `DEMO_MODE=true` replaces the real Kraken client with `DemoKrakenAPI`, which
-returns synthetic prices and balances. Demo transactions are marked
+simulates orders and balances but uses **live Kraken public prices**
+(synthetic prices only as a fallback when the public API is unreachable). Demo transactions are marked
 `"simulated": true` and are not real trades. Demo data is generated locally by
 `scripts/generate_demo_data.py` and never leaves your machine unless you
 explicitly copy it.

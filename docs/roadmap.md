@@ -1,6 +1,9 @@
 # Development Roadmap
 
-> This is a living plan. The current priority is **getting the bot running reliably in production**; everything else is queued behind that.
+> This is a living plan. The bot is **live in production and hardened**
+> (security wave S1–S5 shipped in v1.3.0). Open feature work: Phase 2
+> (ATR-based volatility adaptation) and Phase 5 (multi-pair — options and
+> effort assessed); Phase 3 stays queued behind Phase 2.
 
 ---
 
@@ -28,30 +31,47 @@
 
 ---
 
-## Phase 1 — Stabilisation & observability (current)
+## Phase 1 — Stabilisation & observability (completed)
 
 **Goal:** Make the bot boringly reliable before adding features.
 
-### Planned work
+### Delivered
 
-- Add external health monitoring (e.g., Uptime Kuma or Prometheus node-exporter) that alerts if the container is unhealthy.
-- Alert if no Telegram message is received for an extended period.
-- Add a simple “last successful buy” timestamp to the dashboard.
-- Review and tighten log retention.
-- Test backup restore procedure end-to-end.
-- Document runbook for common alerts.
+- External health monitoring: `/api/metrics` bearer-protected endpoint,
+  `MONITORING_TOKEN`, and a monitoring runbook
+  ([`docs/operations/MONITORING.md`](operations/MONITORING.md)). Standing up
+  the external checker (Uptime Kuma/Prometheus) itself is a deployment-side
+  task, not a code task.
+- Alerting surface: alert rules with acknowledge support in the dashboard,
+  alert runbooks ([`INCIDENT_RUNBOOK.md`](operations/INCIDENT_RUNBOOK.md),
+  [`ORDER_FAILURE_RUNBOOK.md`](operations/ORDER_FAILURE_RUNBOOK.md)).
+- Buy transparency: full buy history with timestamps in the dashboard, last
+  buys via Telegram `/last`.
+- Log hygiene: rotating JSON logs with retention configuration
+  (`RETENTION_DAYS`).
+- Backups: scheduled rotation (daily/weekly, configurable counts) and a
+  documented [`BACKUP_RESTORE_RUNBOOK.md`](operations/BACKUP_RESTORE_RUNBOOK.md).
+  Practising a restore end-to-end remains an operations TODO.
 
 ### Success criteria
 
-- Bot runs for 30 days without manual intervention.
-- All alerts are actionable and tested.
-- Backup restore has been practised once.
+- [x] All alerts are actionable, with runbooks.
+- [x] Backups run on a schedule with rotation.
+- [ ] Bot runs for 30 days without manual intervention (continuous).
+- [ ] Restore drill performed once (operations TODO, no code change).
 
 ---
 
 ## Phase 2 — Volatility-adaptive dip buying (ATR)
 
 **Goal:** Replace the fixed `dip_threshold_percent` with a threshold that adapts to market volatility.
+
+> **Status note (2026-10-09):** still open. Dynamic DCA tiers (Phase 4,
+> shipped) cover part of the motivation — buy sizes already adapt to the
+> price trend — but the *trigger threshold* is still a fixed percentage.
+> ATR would make the trigger itself volatility-aware. Assessed in the
+> private backlog as the cheapest volatility adaptation before any
+> AI-assisted strategy work.
 
 ### Why ATR
 
@@ -129,9 +149,22 @@ This prevents buying every small pullback and avoids catching falling knives in 
 
 ---
 
-## Phase 4 — Tiered / laddered dip buys
+## Phase 4 — Tiered / laddered dip buys (completed)
 
 **Goal:** Deploy more capital as the dip gets deeper.
+
+> **Status note (2026-10-09):** shipped as **Dynamic DCA tiers** (v1.1/v1.2)
+> and since refined (tier labels on orders, fiat-value display, live Kraken
+> ordermin floor). The tier table implements exactly this ladder — as
+> absolute amounts per threshold instead of multipliers — with the risk
+> mitigations from below already in place: per-pair cooldown between buys,
+> the monthly budget checked against the resolved tier amount, and a tier
+> amount of `0` to skip buying into rallies. The configuration and the
+> resolution rules are documented in
+> [`docs/configuration.md`](configuration.md) → *Dynamic DCA tiers*; the
+> table is editable in the dashboard (Settings → Strategy).
+
+### Original proposal (kept for reference)
 
 ### Proposed rule
 
@@ -164,6 +197,12 @@ This prevents buying every small pullback and avoids catching falling knives in 
 
 **Goal:** Run DCA for multiple trading pairs from one bot.
 
+> **Status note (2026-10-09):** still open. Assessed in the private backlog
+> (options: one container per pair vs. in-app portfolios; recommended v1
+> scope; global budget guardrail as the first story). The short-term
+> workaround — a second container with its own volumes, budget, and
+> Telegram bot — works today without code changes.
+
 ### Considerations
 
 - Each pair needs its own `crypto_amount`, `max_monthly_amount`, and possibly its own dip settings.
@@ -183,14 +222,17 @@ This prevents buying every small pullback and avoids catching falling knives in 
 
 ---
 
-## Phase 6 — Paper trading mode
+## Phase 6 — Paper trading mode (completed)
 
 **Goal:** Test new strategies without placing real orders.
 
-### Difference from demo mode
-
-- Demo mode uses **mock** Kraken responses.
-- Paper trading would use **real** Kraken prices and balances but record simulated buys instead of calling `AddOrder`.
+> **Status note (2026-10-09):** covered by demo mode as implemented.
+> `DemoKrakenAPI` simulates orders and balances but uses **live Kraken
+> public prices** (synthetic prices only as a fallback when the public API
+> is unreachable). Running with `DEMO_MODE=true` therefore validates
+> strategies against real market conditions without any `AddOrder` calls —
+> exactly the use case described below. The original demo-vs-paper
+> distinction is obsolete.
 
 ### Use case
 
@@ -198,19 +240,17 @@ Validate ATR or RSI strategies against real market conditions for a few weeks be
 
 ---
 
-## Phase 7 — Storage migration to SQLite
+## Phase 7 — Storage migration to SQLite (removed)
 
-**Goal:** Improve reliability for long-running bots.
-
-### Why
-
-- `transactions.json` and `audit_log.json` grow indefinitely.
-- JSON files are vulnerable to corruption if the container crashes mid-write.
-- SQLite gives atomic writes, indexing, and easier querying.
-
-### Path
-
-A migration script already exists: `scripts/migrate_to_sqlite.py`.
+Removed 2026-10-09 by owner decision: JSON storage is sufficient at the
+current scale. Writes are atomic (temp-file + rename) and cross-process
+locked, transaction volume is a handful of entries per week, and no
+corruption or performance issue has ever been observed. The research
+prototype `scripts/migrate_to_sqlite.py` remains in the repository as a
+documented future path; the decision record lives in
+[`docs/adr/ADR-002-persistence-storage.md`](adr/ADR-002-persistence-storage.md).
+Should storage ever become a problem, the phase returns via a new design,
+not by default.
 
 ---
 
@@ -229,18 +269,18 @@ When picked up, it needs its own architecture and migration plan. See
 
 ## Phase ordering rationale
 
-| Phase | Priority | Reason |
+| Phase | Status | Reason |
 |-------|----------|--------|
-| 0 | Now | Bot must work before anything else |
-| 1 | Next | Reliability before complexity |
-| 2 | After stabilisation | ATR is the simplest smart improvement |
+| 0 | Completed | Bot must work before anything else |
+| 1 | Completed | Reliability before complexity |
+| 2 | Next candidate | ATR is the simplest smart improvement; dynamic tiers already cover adaptive sizes |
 | 3 | Later | More indicators add complexity |
-| 4 | Later | Higher risk; needs careful budgeting |
-| 5 | Much later | Major architecture change |
-| 6 | Anytime after Phase 0 | Useful for testing strategies safely |
-| 7 | When needed | Only if JSON storage becomes a problem |
+| 4 | Completed | Shipped as dynamic DCA tiers |
+| 5 | Later, assessed | Major architecture change; container-per-pair workaround exists |
+| 6 | Completed | Demo mode uses live prices with simulated orders |
+| 7 | Removed 2026-10-09 | JSON storage sufficient; script kept as documented path (ADR-002) |
 | Strategy framework | Post-v1.0 | Requires stable core and dedicated design |
 
 ---
 
-*Last updated: 2026-07-25*
+*Last updated: 2026-10-09*
