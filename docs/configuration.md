@@ -112,12 +112,17 @@ the price drops below your reference, smaller buys or a full skip when it rises.
 #### How a buy amount is resolved
 
 1. Compute the price change: `(current_price - reference) / reference * 100`.
-2. Sort the enabled tiers by `threshold_percent`, highest first, and pick the
-   **first** tier whose threshold is at or below the price change. Matching
-   stops there — tier amounts are **not** summed.
-3. If the price change is below the lowest tier's threshold, fall back to the
-   base amount (`crypto_amount`).
-4. An amount of `0` skips the buy completely.
+2. **Dips** (negative change): sort the enabled dip tiers (threshold ≤ 0)
+   from deepest to shallowest and pick the first tier the drop actually
+   reached (`change <= threshold`). The deepest crossed tier wins, so a
+   crash never falls back to the smaller base amount.
+3. **Rises** (positive change): sort the enabled rise tiers (threshold > 0)
+   from highest to lowest and pick the first tier whose threshold is
+   reached (`change >= threshold`). The highest reached tier wins, so a
+   +10 % rise skips the buy instead of matching the shallower +5 % tier.
+4. A rise never triggers a dip tier and vice versa. If no tier matched,
+   fall back to the base amount (`crypto_amount`). An amount of `0` skips
+   the buy completely.
 
 With the default tiers above (amounts for BTC pairs; Kraken's ordermin is
 0.00005 XBT for XXBTZEUR, and the bot always enforces the live ordermin —
@@ -126,12 +131,12 @@ scale the set proportionally for other assets or budgets):
 | Price vs reference | Buy amount | Why |
 |--------------------|-----------|-----|
 | ≥ +10 % | none | Buying deep into a rally is skipped |
-| +5 % … +10 % | 0.0005 | Keep accumulating, but small |
-| −2 % … +5 % | 0.00075 | Normal market conditions |
-| −5 % … −2 % | 0.001 | Slightly cheaper than usual |
-| −10 % … −5 % | 0.0015 | Noticeable dip |
-| −20 % … −10 % | 0.002 | Strong dip |
-| < −20 % | 0.0005 (base) | Below the table — no tier matched, fallback |
+| +5 % … < +10 % | 0.0005 | Keep accumulating, but small |
+| > −2 % … < +5 % | 0.0005 (base) | No tier applies — normal conditions |
+| > −5 % … ≤ −2 % | 0.00075 | Crossed the −2 % mark |
+| > −10 % … ≤ −5 % | 0.001 | Crossed the −5 % mark |
+| > −20 % … ≤ −10 % | 0.0015 | Strong dip |
+| ≤ −20 % | 0.002 | Deepest tier — crash protection, never the smaller base amount |
 
 #### Where the tiers apply
 

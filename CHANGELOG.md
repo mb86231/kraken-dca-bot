@@ -8,6 +8,19 @@ Releases are tagged `v*` and published as container images to
 `ghcr.io/mb86231/kraken-dca-bot:<tag>` (plus `:latest`). To update a running
 installation, see **Updates** in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
+## [1.3.1] — 2026-10-12
+
+### Fixed
+
+- **Dynamic DCA tier matching**: a dip tier (e.g. -2%) previously fired on
+  any price change at or above its threshold — including rises and dips
+  shallower than 2% — so the bot placed a "Dynamic -2%" buy nearly every
+  cycle. Dip tiers now require the drop to actually reach the threshold
+  (`change <= threshold`), a rise can never match a dip tier (and vice
+  versa), and a drop beyond the deepest tier uses the deepest tier's
+  amount instead of falling back to the smaller base amount. Tier labels
+  ("Dynamic -2%") are now truthful.
+
 ## [1.3.0] — 2026-10-08
 
 ### Security
@@ -124,6 +137,7 @@ dynamic DCA tiers, Authentik OIDC + local login, preflight checks, secrets
 management, staging/backup plumbing). See the git tags and commit history
 for details.
 
+[1.3.1]: https://github.com/mb86231/kraken-dca-bot/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/mb86231/kraken-dca-bot/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/mb86231/kraken-dca-bot/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/mb86231/kraken-dca-bot/compare/v1.1.5...v1.2.0

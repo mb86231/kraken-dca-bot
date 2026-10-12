@@ -191,20 +191,28 @@ class KrakenDCA:
         return MIN_ORDER_CRYPTO_AMOUNT
 
     def _match_tier(self, price_change_percent: float) -> Tuple[Optional[float], float]:
-        """Return (threshold_percent, amount) of the first matching tier.
+        """Return (threshold_percent, amount) of the matching tier.
 
         ``threshold_percent`` is None when no tier matched and the base amount
         is used as fallback.
+
+        Dip tiers (threshold <= 0) match only when the drop actually reached
+        the threshold (``change <= threshold``); the deepest reached tier
+        wins, so a crash never falls back to the smaller base amount. Rise
+        tiers (threshold > 0) match when the change reached at least the
+        threshold; the deepest reached tier wins as well, so a +10% rise
+        skips the buy entirely instead of matching the shallower +5% tier.
+        A rise must never trigger a dip tier and vice versa.
         """
-        for tier in sorted(
-            self.config.dynamic_dca_tiers,
-            key=lambda t: t.threshold_percent,
-            reverse=True,
-        ):
-            if not tier.enabled:
-                continue
-            if price_change_percent >= tier.threshold_percent:
-                return tier.threshold_percent, tier.amount
+        enabled = [t for t in self.config.dynamic_dca_tiers if t.enabled]
+        if price_change_percent < 0:
+            for tier in sorted(enabled, key=lambda t: t.threshold_percent):
+                if tier.threshold_percent <= 0 and price_change_percent <= tier.threshold_percent:
+                    return tier.threshold_percent, tier.amount
+        else:
+            for tier in sorted(enabled, key=lambda t: t.threshold_percent, reverse=True):
+                if tier.threshold_percent > 0 and price_change_percent >= tier.threshold_percent:
+                    return tier.threshold_percent, tier.amount
         return None, self.config.crypto_amount
 
     def resolve_buy_amount(self, current_price: float) -> float:

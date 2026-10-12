@@ -3,7 +3,8 @@
 > This is a living plan. The bot is **live in production and hardened**
 > (security wave S1–S5 shipped in v1.3.0). Open feature work: Phase 2
 > (ATR-based volatility adaptation) and Phase 5 (multi-pair — options and
-> effort assessed); Phase 3 stays queued behind Phase 2.
+> effort assessed); Phase 3 stays queued behind Phase 2. Phase 8 (AI
+> advisor) is planned as a beta track behind feature flags.
 
 ---
 
@@ -254,6 +255,34 @@ not by default.
 
 ---
 
+## Phase 8 — AI advisor (planned, beta track)
+
+**Goal:** an optional, advisory-only AI layer: scheduled market briefings,
+alert explanations, and (later, shadow mode only) structured inputs like a
+Fear & Greed score or a news filter. Planned release line: `v1.4.0-beta.x`
+as GitHub pre-releases.
+
+**Design principles (fixed before implementation):**
+
+- Every feature behind its own flag, all off by default; a global kill
+  switch restores the unchanged base strategy.
+- A1–A3 (briefing, explainer, foundation) never touch buy decisions,
+  budgets, strategy parameters, or orders; the bot supplies all numbers,
+  the model only formulates.
+- Anything that could influence sizing ships in shadow/proposal mode first,
+  with per-feature evaluation gates and human approval before activation.
+- Hard limits (budget floors, minimum order sizes, exchange minimums) stay
+  deterministic code invariants outside the model.
+- The AI layer gets no exchange credentials, no order functions, no shell,
+  and no write access to strategy or configuration; provider failures
+  degrade to "no advice" and are visible, never silent.
+
+**Not started.** Story list and effort estimates live in the private
+backlog; a beta release is cut only after the advisory stories are
+validated.
+
+---
+
 ## Deferred to post-v1.0
 
 ### Pluggable strategy framework
@@ -279,8 +308,9 @@ When picked up, it needs its own architecture and migration plan. See
 | 5 | Later, assessed | Major architecture change; container-per-pair workaround exists |
 | 6 | Completed | Demo mode uses live prices with simulated orders |
 | 7 | Removed 2026-10-09 | JSON storage sufficient; script kept as documented path (ADR-002) |
+| 8 | Planned, beta track | Advisory AI layer behind flags; per-feature evaluation gates before any trading-path influence |
 | Strategy framework | Post-v1.0 | Requires stable core and dedicated design |
 
 ---
 
-*Last updated: 2026-10-09*
+*Last updated: 2026-10-10*

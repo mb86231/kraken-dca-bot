@@ -173,17 +173,59 @@ class TestMatchTier:
         assert bot._match_tier(10.0) == (10.0, 0.0)
 
     def test_fallback_returns_none_threshold(self, bot: KrakenDCA):
-        # Below the lowest tier: falls back to base amount, no tier matched.
+        # Below the lowest tier: the deepest tier still applies (crash
+        # protection) — a crash must never buy less than the deepest tier.
         threshold, amount = bot._match_tier(-30.0)
-        assert threshold is None
-        assert amount == bot.config.crypto_amount
+        assert threshold == -20.0
+        assert amount == 0.0003
 
     def test_disabled_tier_skipped(self, bot: KrakenDCA):
         for tier in bot.config.dynamic_dca_tiers:
             if tier.threshold_percent == 5.0:
                 tier.enabled = False
-        # +7% falls through the disabled +5% tier to the -2% tier.
-        assert bot._match_tier(7.0) == (-2.0, 0.0001)
+        # +7% reaches neither the disabled +5% tier nor the +10% tier, and a
+        # rise must never match a dip tier — base amount.
+        assert bot._match_tier(7.0) == (None, bot.config.crypto_amount)
+
+
+class TestMatchTierDipSemantics:
+    """Regression tests for the tier-boundary bug: a dip tier must only
+    fire when the drop actually reached the threshold."""
+
+    @pytest.fixture
+    def bot(self, dynamic_config: Config, tmp_path: Path):
+        store = TransactionStore(filepath=tmp_path / "transactions.json")
+        state = BotState(filepath=tmp_path / "state.json", persist=False)
+        bot = KrakenDCA(config=dynamic_config, store=store, state=state)
+        bot.store.clear()
+        return bot
+
+    def test_small_dip_below_first_tier_uses_base(self, bot: KrakenDCA):
+        # -0.39% is shallower than the -2% tier: no dynamic buy at all.
+        assert bot._match_tier(-0.39) == (None, bot.config.crypto_amount)
+
+    def test_rise_never_matches_dip_tier(self, bot: KrakenDCA):
+        # The prod incident: price +1.18% still produced "Dynamic -2%" buys.
+        assert bot._match_tier(1.18) == (None, bot.config.crypto_amount)
+
+    def test_exact_tier_boundary_matches(self, bot: KrakenDCA):
+        assert bot._match_tier(-2.0) == (-2.0, 0.0001)
+
+    def test_moderate_dip_matches_crossed_mark(self, bot: KrakenDCA):
+        # -3% crossed the -2% mark but not -5%: the -2% tier applies, and
+        # the label truthfully reflects the crossed threshold.
+        assert bot._match_tier(-3.0) == (-2.0, 0.0001)
+
+    def test_resolve_buy_amount_no_tier_amount_on_small_dip(self, bot: KrakenDCA):
+        """Prod config shape: the -2% tier amount exceeds the base amount.
+        A dip shallower than 2% must yield the BASE amount, not the tier
+        amount — otherwise the bot buys 'dynamic' every day."""
+        for tier in bot.config.dynamic_dca_tiers:
+            if tier.threshold_percent == -2.0:
+                tier.amount = 0.00025  # > base (0.0001), as in production
+        bot.store.add_transaction("XBTCHF", 0.0001, 50000.0, strategy="scheduled")
+        assert bot.resolve_buy_amount(current_price=49805.0) == 0.0001  # -0.39%
+        assert bot.resolve_buy_amount(current_price=48750.0) == 0.00025  # -2.5%
 
 
 class TestDynamicTierRecordedOnOrder:
@@ -213,14 +255,14 @@ class TestDynamicTierRecordedOnOrder:
         assert txn.strategy == "scheduled"
         assert txn.dynamic_tier is None
 
-    def test_dynamic_buy_fallback_tier_is_none(self, bot: KrakenDCA):
-        # Price far below the lowest tier: amount falls back to base and no
-        # tier label is recorded.
+    def test_dynamic_buy_below_deepest_tier_records_deepest_tier(self, bot: KrakenDCA):
+        # Price far below the lowest tier: the deepest tier applies (crash
+        # protection) and is recorded for display as "Dynamic -20%".
         bot.store.add_transaction("XBTCHF", 0.0001, 100000.0, strategy="scheduled")
-        # 47'500 vs reference 100'000 is -52.5%: below the -20% tier.
+        # 47'500 vs reference 100'000 is -52.5%: beyond the -20% tier.
         bot.execute_buy(strategy="dynamic")
         txn = bot.store.get_transactions("XBTCHF")[-1]
-        assert txn.dynamic_tier is None
+        assert txn.dynamic_tier == -20.0
 
 
 class TestTransactionDynamicTierPersistence:
