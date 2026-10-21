@@ -507,6 +507,12 @@ def api_performance(
     txns = store.get_transactions(pair)
     quote = _quote_currency(pair)
     asset = _base_asset(pair)
+    price_at = state.last_price_at
+    price_stale = (
+        price_at is not None
+        and (datetime.now(timezone.utc) - price_at).total_seconds()
+        > PRICE_STALE_SECONDS
+    )
 
     if not txns:
         return {
@@ -519,6 +525,8 @@ def api_performance(
             "total_amount": 0,
             "avg_buy_price": 0,
             "current_price": state.last_price or 0,
+            "current_price_at": price_at.isoformat() if price_at else None,
+            "current_price_stale": price_stale,
             "purchase_count": 0,
             "first_purchase_at": None,
             "last_purchase_at": None,
@@ -543,6 +551,8 @@ def api_performance(
         "total_amount": round(total_amount, 8),
         "avg_buy_price": round(avg_price, 2),
         "current_price": round(current_price, 2),
+        "current_price_at": price_at.isoformat() if price_at else None,
+        "current_price_stale": price_stale,
         "purchase_count": len(txns),
         "first_purchase_at": format_datetime(txns[0].date),
         "last_purchase_at": format_datetime(txns[-1].date),
@@ -615,6 +625,90 @@ def api_chart_price(
     }
 
 
+# Chart range -> (OHLC interval minutes, days of history). Market-backed
+# valuation uses coarser candles for longer ranges (Kraken caps responses
+# well below any of these counts).
+_VALUATION_RANGES = {
+    "24h": (60, 1),
+    "7d": (240, 7),
+    "30d": (240, 30),
+    "90d": (1440, 90),
+    "1y": (1440, 365),
+    "all": (1440, None),
+}
+
+# A cached market price older than this is flagged as stale in the UI.
+PRICE_STALE_SECONDS = 900
+
+
+def _market_valuation_series(
+    pair: str,
+    txns,
+    range_key: str,
+    api_key: str = "",
+    api_secret: str = "",
+) -> Optional[dict[str, list]]:
+    """Cumulative invested / market value / unrealized P/L per market candle.
+
+    Holdings step up at each buy; every candle between buys is valued at its
+    own close, so the curve follows the real market instead of interpolating
+    between buy-time valuations (the previous behaviour valued each point at
+    its own trade price, which hid everything that happened between buys).
+
+    Returns None when market data is unavailable — the caller falls back to
+    the trade-price valuation so the charts still render.
+    """
+    if not txns:
+        return None
+    interval, days = _VALUATION_RANGES[range_key]
+    interval_seconds = interval * 60
+    buys = sorted(txns, key=lambda t: datetime.fromisoformat(t.date))
+    if days is not None:
+        since = int((now_tz() - timedelta(days=days)).timestamp())
+    else:
+        first_buy = datetime.fromisoformat(buys[0].date)
+        since = int((first_buy - timedelta(seconds=interval_seconds)).timestamp())
+
+    try:
+        client: DemoKrakenAPI | KrakenAPI
+        client = (
+            DemoKrakenAPI(api_key, api_secret)
+            if is_demo_mode()
+            else KrakenAPI(api_key, api_secret)
+        )
+        candles = client.get_ohlc(pair, interval=interval, since=since)
+    except Exception:
+        return None
+    if not candles:
+        return None
+
+    labels: list[str] = []
+    invested: list[float] = []
+    value: list[float] = []
+    pl: list[float] = []
+    cum_amount = 0.0
+    cum_spent = 0.0
+    buy_index = 0
+    for candle in sorted(candles, key=lambda c: c[0]):
+        candle_time = datetime.fromtimestamp(int(candle[0]), tz=timezone.utc)
+        while buy_index < len(buys) and (
+            datetime.fromisoformat(buys[buy_index].date) <= candle_time
+        ):
+            cum_amount += buys[buy_index].amount
+            cum_spent += buys[buy_index].amount * buys[buy_index].price
+            buy_index += 1
+        if buy_index == 0:
+            continue  # no holdings yet — nothing to value
+        close = float(candle[4])
+        labels.append(format_datetime(candle_time) or "")
+        invested.append(round(cum_spent, 2))
+        value.append(round(cum_amount * close, 2))
+        pl.append(round(cum_amount * close - cum_spent, 2))
+    if not labels:
+        return None
+    return {"labels": labels, "invested": invested, "value": value, "pl": pl}
+
+
 @router.get("/charts/{name}")
 def api_charts(
     name: str,
@@ -647,6 +741,18 @@ def api_charts(
         return {"labels": labels, "datasets": [{"label": "Portfolio value", "data": values}]}
 
     if name == "invested_vs_value":
+        market_series = _market_valuation_series(
+            pair, filtered, range, config.api_key, config.api_secret
+        )
+        if market_series is not None:
+            return {
+                "labels": market_series["labels"],
+                "datasets": [
+                    {"label": "Total invested", "data": market_series["invested"]},
+                    {"label": "Current value", "data": market_series["value"]},
+                ],
+                "valuation": "market",
+            }
         labels = []
         invested = []
         value = []
@@ -664,9 +770,21 @@ def api_charts(
                 {"label": "Total invested", "data": invested},
                 {"label": "Current value", "data": value},
             ],
+            "valuation": "trades",
         }
 
     if name == "pl_over_time":
+        market_series = _market_valuation_series(
+            pair, filtered, range, config.api_key, config.api_secret
+        )
+        if market_series is not None:
+            return {
+                "labels": market_series["labels"],
+                "datasets": [
+                    {"label": "Unrealized P/L", "data": market_series["pl"]}
+                ],
+                "valuation": "market",
+            }
         labels = []
         data = []
         cum_amount = 0.0
@@ -676,7 +794,11 @@ def api_charts(
             cum_spent += t.amount * t.price
             labels.append(format_datetime(t.date))
             data.append(round(cum_amount * t.price - cum_spent, 2))
-        return {"labels": labels, "datasets": [{"label": "Unrealized P/L", "data": data}]}
+        return {
+            "labels": labels,
+            "datasets": [{"label": "Unrealized P/L", "data": data}],
+            "valuation": "trades",
+        }
 
     if name == "purchase_history":
         labels = []

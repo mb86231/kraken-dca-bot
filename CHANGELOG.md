@@ -8,6 +8,26 @@ Releases are tagged `v*` and published as container images to
 `ghcr.io/mb86231/kraken-dca-bot:<tag>` (plus `:latest`). To update a running
 installation, see **Updates** in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
+## [1.3.2] — 2026-10-21
+
+### Fixed
+
+- **Performance: P/L charts follow the real market.** The "Unrealized
+  Profit / Loss" and "Invested vs. Market Value" charts valued every data
+  point at its own transaction's fill price, so the curve only moved on
+  buy days and hid everything that happened between buys. Both charts are
+  now built on Kraken OHLC closes: holdings step up at each buy and every
+  candle between buys is valued at its own close, so drawdowns and
+  recoveries between buys are visible. When market data is unavailable the
+  charts degrade to the previous trade-price valuation instead of failing,
+  with a visible note on the chart.
+- **Performance: market price freshness is now visible.** The KPIs value
+  the portfolio at the bot's last ticker price, but nothing showed how old
+  that price was — a paused bot or a dead price feed silently showed stale
+  valuations. The dashboard now shows the price timestamp under "Market
+  Price" and marks it red with a "stale" note when the price is older than
+  15 minutes.
+
 ## [1.3.1] — 2026-10-12
 
 ### Fixed

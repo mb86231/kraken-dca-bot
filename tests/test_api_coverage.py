@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import bcrypt
@@ -161,6 +161,106 @@ def test_api_chart_price(auth_client: TestClient):
     data = response.json()
     assert "price_dataset" in data
     assert "buy_dataset" in data
+
+
+# ---------------------------------------------------------------------------
+# Performance: market-backed valuation + price freshness
+# ---------------------------------------------------------------------------
+
+
+class _FakeOHLCClient:
+    """Deterministic OHLC source (or a failing one) for chart valuation."""
+
+    def __init__(self, candles=None, fail: bool = False):
+        self._candles = candles or []
+        self._fail = fail
+
+    def get_ohlc(self, pair, interval=60, since=None):
+        if self._fail:
+            raise RuntimeError("market down")
+        return self._candles
+
+
+def _candle(epoch: int, close: float) -> list:
+    return [epoch, close, close, close, close, close, 0.0, 1]
+
+
+def test_api_charts_pl_market_valuation(auth_client: TestClient, monkeypatch):
+    """P/L over time must follow market closes, not buy-time valuations."""
+    store = app.state.store
+    now = datetime.now(timezone.utc)
+    store.add_transaction("XBTCHF", 0.001, 50000.0, strategy="scheduled")
+    store.add_transaction("XBTCHF", 0.001, 60000.0, strategy="scheduled")
+    store.transactions[0].date = (now - timedelta(hours=2)).isoformat()
+    store.transactions[1].date = (now - timedelta(minutes=90)).isoformat()
+    candles = [
+        _candle(int((now - timedelta(minutes=60)).timestamp()), 55000.0),
+        _candle(int(now.timestamp()), 50000.0),
+    ]
+    monkeypatch.setattr(
+        "web.routers.api.DemoKrakenAPI",
+        lambda *a, **k: _FakeOHLCClient(candles),
+    )
+    response = auth_client.get("/api/charts/pl_over_time?range=30d")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valuation"] == "market"
+    # invested = 110 at every candle; value 110 -> P/L 0, then 100 -> P/L -10.
+    assert data["datasets"][0]["data"] == [0.0, -10.0]
+    assert len(data["labels"]) == 2
+
+
+def test_api_charts_pl_falls_back_to_trade_prices(
+    auth_client: TestClient, monkeypatch
+):
+    """When market data is unavailable the chart degrades, never errors."""
+    store = app.state.store
+    store.add_transaction("XBTCHF", 0.001, 50000.0, strategy="scheduled")
+    monkeypatch.setattr(
+        "web.routers.api.DemoKrakenAPI",
+        lambda *a, **k: _FakeOHLCClient(fail=True),
+    )
+    response = auth_client.get("/api/charts/pl_over_time?range=7d")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valuation"] == "trades"
+    assert len(data["datasets"][0]["data"]) == 1
+
+
+def test_api_charts_invested_vs_value_market_valuation(
+    auth_client: TestClient, monkeypatch
+):
+    store = app.state.store
+    now = datetime.now(timezone.utc)
+    store.add_transaction("XBTCHF", 0.001, 50000.0, strategy="scheduled")
+    store.transactions[0].date = (now - timedelta(hours=2)).isoformat()
+    candles = [_candle(int(now.timestamp()), 52000.0)]
+    monkeypatch.setattr(
+        "web.routers.api.DemoKrakenAPI",
+        lambda *a, **k: _FakeOHLCClient(candles),
+    )
+    response = auth_client.get("/api/charts/invested_vs_value?range=30d")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valuation"] == "market"
+    assert data["datasets"][0]["data"] == [50.0]  # invested
+    assert data["datasets"][1]["data"] == [52.0]  # value at market close
+
+
+def test_api_performance_price_freshness(auth_client: TestClient):
+    from bot.utils import utc_now
+
+    state = app.state.bot_state
+    state.update(last_price=50000.0, last_price_at=utc_now())
+    data = auth_client.get("/api/performance").json()
+    assert data["current_price_at"] is not None
+    assert data["current_price_stale"] is False
+
+    state.update(
+        last_price=50000.0, last_price_at=utc_now() - timedelta(minutes=30)
+    )
+    data = auth_client.get("/api/performance").json()
+    assert data["current_price_stale"] is True
 
 
 def test_api_logs_empty(auth_client: TestClient, temp_dir: Path):

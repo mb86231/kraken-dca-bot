@@ -29,6 +29,7 @@
   <div class="card stat-card">
     <div class="stat-label">Market Price</div>
     <div class="stat-value" id="kpi-market">—</div>
+    <div class="muted" id="kpi-market-at"></div>
   </div>
   <div class="card stat-card">
     <div class="stat-label">Holdings</div>
@@ -61,10 +62,12 @@
   <div class="card">
     <h2>Invested vs. Market Value</h2>
     <canvas id="chart-invested"></canvas>
+    <div class="muted" id="iv-valuation-note" style="margin-top: 0.5rem;"></div>
   </div>
   <div class="card">
     <h2>Unrealized Profit / Loss</h2>
     <canvas id="chart-pl"></canvas>
+    <div class="muted" id="pl-valuation-note" style="margin-top: 0.5rem;"></div>
   </div>
 </div>
 <div class="grid grid-2">
@@ -127,6 +130,22 @@
     setKpi('kpi-avg', data.avg_buy_price, { currency: quote });
     setKpi('kpi-market', data.current_price, { currency: quote });
     setKpi('kpi-amount', data.total_amount, { crypto: true });
+    const marketAtEl = document.getElementById('kpi-market-at');
+    if (marketAtEl) {
+      if (data.current_price_at) {
+        const at = new Date(data.current_price_at);
+        const when = Number.isNaN(at.getTime())
+          ? data.current_price_at
+          : at.toLocaleString('de-CH', { dateStyle: 'short', timeStyle: 'short' });
+        marketAtEl.textContent = data.current_price_stale
+          ? `as of ${when} — stale`
+          : `as of ${when}`;
+        marketAtEl.style.color = data.current_price_stale ? 'var(--red)' : '';
+      } else {
+        marketAtEl.textContent = 'price timestamp unavailable';
+        marketAtEl.style.color = 'var(--red)';
+      }
+    }
     document.getElementById('kpi-first').textContent = data.first_purchase_at || '—';
     document.getElementById('kpi-last').textContent = data.last_purchase_at || '—';
   }
@@ -152,6 +171,23 @@
     const data = await apiGet(`/api/charts/${name}?range=${currentRange}`);
     const ctx = document.getElementById(canvasId).getContext('2d');
     const colors = chartColors(name);
+
+    if (canvasId === 'chart-pl') {
+      const note = document.getElementById('pl-valuation-note');
+      if (note) {
+        note.textContent = data.valuation === 'market'
+          ? 'Valued at market closes (Kraken OHLC).'
+          : 'Market data unavailable — valued at trade prices.';
+      }
+    }
+    if (canvasId === 'chart-invested') {
+      const note = document.getElementById('iv-valuation-note');
+      if (note) {
+        note.textContent = data.valuation === 'market'
+          ? 'Valued at market closes (Kraken OHLC).'
+          : 'Market data unavailable — valued at trade prices.';
+      }
+    }
 
     if (charts[canvasId]) {
       charts[canvasId].destroy();
