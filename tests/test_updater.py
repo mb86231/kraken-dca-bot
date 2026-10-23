@@ -222,10 +222,12 @@ def test_disabled_checker_never_notifies(tmp_path: Path):
 
 def test_check_if_due_respects_interval(tmp_path: Path, monkeypatch):
     calls = []
-    monkeypatch.setattr(
-        "bot.updater.fetch_latest_release",
-        lambda client, url=None: calls.append(url) or None,
-    )
+
+    def _fake_fetch(client, url=None):
+        calls.append(url)
+        return None
+
+    monkeypatch.setattr("bot.updater.fetch_latest_release", _fake_fetch)
     checker = _checker(tmp_path, lambda tag, url: None)
 
     checker.check_if_due()  # no last_check_at → performs a check
