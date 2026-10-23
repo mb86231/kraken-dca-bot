@@ -62,6 +62,8 @@ class Config:
         self.poll_interval_seconds: int = 600
         self.buy_hour: int = 8
         self.dip_buy_cooldown_hours: float = 24.0
+        self.update_check_enabled: bool = True
+        self.update_check_interval_hours: int = 24
         self.max_price: Optional[float] = None
         self.max_monthly_amount: Optional[float] = None
         self.dca_end_date: Optional[datetime] = None
@@ -110,6 +112,10 @@ class Config:
         self.poll_interval_seconds = int(config.get("poll_interval_seconds", 600))
         self.buy_hour = int(config.get("buy_hour", 8))
         self.dip_buy_cooldown_hours = float(config.get("dip_buy_cooldown_hours", 24.0))
+        self.update_check_enabled = bool(config.get("update_check_enabled", True))
+        self.update_check_interval_hours = int(
+            config.get("update_check_interval_hours", 24)
+        )
         max_price_raw = config.get("max_price")
         self.max_price = float(max_price_raw) if max_price_raw is not None else None
         max_monthly_raw = config.get("max_monthly_amount")
@@ -174,6 +180,8 @@ class Config:
             raise Exception("dip_threshold_percent must be between 0 and 100")
         if self.poll_interval_seconds < 60:
             raise Exception("poll_interval_seconds must be at least 60")
+        if self.update_check_interval_hours < 1:
+            raise Exception("update_check_interval_hours must be at least 1")
         if not (0 <= self.buy_hour <= 23):
             raise Exception("buy_hour must be between 0 and 23")
         if self.dip_buy_cooldown_hours < 0:
@@ -205,6 +213,8 @@ class Config:
             "poll_interval_seconds": 600,
             "buy_hour": 8,
             "dip_buy_cooldown_hours": 24.0,
+            "update_check_enabled": True,
+            "update_check_interval_hours": 24,
             "live_trading_enabled": False,
             "dynamic_dca": {
                 "enabled": False,
@@ -227,6 +237,8 @@ class Config:
             "dip_threshold_percent": self.dip_threshold_percent,
             "dip_buy_cooldown_hours": self.dip_buy_cooldown_hours,
             "poll_interval_seconds": self.poll_interval_seconds,
+            "update_check_enabled": self.update_check_enabled,
+            "update_check_interval_hours": self.update_check_interval_hours,
             "max_price": self.max_price,
             "max_monthly_amount": self.max_monthly_amount,
             "dca_end_date": self.dca_end_date.isoformat() if self.dca_end_date else None,

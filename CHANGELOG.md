@@ -8,6 +8,20 @@ Releases are tagged `v*` and published as container images to
 `ghcr.io/mb86231/kraken-dca-bot:<tag>` (plus `:latest`). To update a running
 installation, see **Updates** in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
+## [1.3.3] — 2026-10-24
+
+### Added
+
+- **Update ticker: the bot now tells you when a newer release exists.** A
+  background check polls the public GitHub releases API at a configurable
+  interval (Settings → *Check for Updates*, default every 24 h). When a
+  newer release is found, the dashboard shows a dismissible banner with a
+  link to the release notes, and the bot sends a one-time Telegram message
+  plus an info alert. The ticker is strictly informational — it never
+  downloads or installs anything, and any failure (offline, API error,
+  malformed response) is silent so trading is never disturbed.
+  Pre-release tags are never treated as updates.
+
 ## [1.3.2] — 2026-10-21
 
 ### Fixed
@@ -157,6 +171,8 @@ dynamic DCA tiers, Authentik OIDC + local login, preflight checks, secrets
 management, staging/backup plumbing). See the git tags and commit history
 for details.
 
+[1.3.3]: https://github.com/mb86231/kraken-dca-bot/compare/v1.3.2...v1.3.3
+[1.3.2]: https://github.com/mb86231/kraken-dca-bot/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/mb86231/kraken-dca-bot/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/mb86231/kraken-dca-bot/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/mb86231/kraken-dca-bot/compare/v1.2.0...v1.2.1

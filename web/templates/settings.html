@@ -57,6 +57,15 @@
       <input type="number" id="poll_interval_seconds" name="poll_interval_seconds" min="60">
     </div>
     <div class="form-group">
+      <label for="update_check_enabled">Check for Updates</label>
+      <input type="checkbox" id="update_check_enabled">
+      <div class="form-hint">Periodically check the public GitHub releases for a newer version and show a banner.</div>
+    </div>
+    <div class="form-group">
+      <label for="update_check_interval_hours">Update Check Interval (hours, ≥1)</label>
+      <input type="number" id="update_check_interval_hours" name="update_check_interval_hours" min="1">
+    </div>
+    <div class="form-group">
       <label for="max_price">Max Price (0 to disable)</label>
       <input type="number" step="0.01" id="max_price" name="max_price">
     </div>
@@ -505,10 +514,11 @@
     const payload = {};
     formData.forEach((v, k) => {
       if (v === '') return;
-      if (['deposit_day', 'buy_hour', 'poll_interval_seconds'].includes(k)) payload[k] = parseInt(v, 10);
+      if (['deposit_day', 'buy_hour', 'poll_interval_seconds', 'update_check_interval_hours'].includes(k)) payload[k] = parseInt(v, 10);
       else if (['crypto_amount', 'dip_threshold_percent', 'dip_buy_cooldown_hours', 'max_price', 'max_monthly_amount'].includes(k)) payload[k] = parseFloat(v);
       else payload[k] = v;
     });
+    payload.update_check_enabled = document.getElementById('update_check_enabled').checked;
     payload.dynamic_dca = collectDynamicDCA();
     try {
       const data = await apiPut('/api/settings', payload);

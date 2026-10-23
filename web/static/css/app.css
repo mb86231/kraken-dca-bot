@@ -819,3 +819,28 @@ th {
   line-height: 1.5;
   margin-top: 0.75rem;
 }
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 1.5rem 1rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--accent, #4f8cff);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent, #4f8cff) 12%, transparent);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.update-banner[hidden] {
+  display: none;
+}
+
+.update-banner span {
+  flex: 1;
+}
+
+.update-banner-link {
+  white-space: nowrap;
+}

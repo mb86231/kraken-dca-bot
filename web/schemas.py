@@ -38,6 +38,8 @@ class SettingsUpdate(BaseModel):
     dip_threshold_percent: Optional[float] = Field(None, gt=0, le=100)
     dip_buy_cooldown_hours: Optional[float] = Field(None, ge=0)
     poll_interval_seconds: Optional[int] = Field(None, ge=60)
+    update_check_enabled: Optional[bool] = None
+    update_check_interval_hours: Optional[int] = Field(None, ge=1)
     buy_hour: Optional[int] = Field(None, ge=0, le=23)
     max_price: Optional[float] = None
     max_monthly_amount: Optional[float] = None

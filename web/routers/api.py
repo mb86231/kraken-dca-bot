@@ -3,6 +3,7 @@
 import csv
 import io
 import json
+import logging
 import os
 import shutil
 import threading
@@ -30,6 +31,7 @@ from bot.preflight import (
 from bot.secrets_store import SecretsStore, _as_bool
 from bot.state import BotState, RuntimeOverrides
 from bot.store import TransactionStore
+from bot.updater import UpdateChecker, UpdateState, status_payload
 from bot.utils import (
     APP_VERSION,
     DISPLAY_TZ,
@@ -58,6 +60,8 @@ from web.schemas import (
     TelegramUpdate,
     WebAuthUpdate,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -973,6 +977,52 @@ def api_settings_runtime(
     data["source"] = str(config.config_path)
     data["loaded_at"] = format_datetime(getattr(config, "loaded_at", None))
     return data
+
+
+# ---------------------------------------------------------------------------
+# Update ticker (phase 1 — information only, never downloads anything)
+# ---------------------------------------------------------------------------
+
+
+def _update_checker(request: Request) -> "UpdateChecker | None":
+    return getattr(request.app.state, "update_checker", None)
+
+
+@router.get("/update/status")
+def api_update_status(
+    request: Request,
+    config: Config = Depends(get_config),
+    username: str = Depends(require_auth),
+    _rate_limit=Depends(api_rate_limit),
+):
+    """Banner payload; performs a lazy check when the interval has passed."""
+    checker = _update_checker(request)
+    try:
+        if checker is not None and getattr(config, "update_check_enabled", True):
+            checker.check_if_due()
+    except Exception:
+        logger.exception("lazy update check failed")
+    return status_payload(config, checker)
+
+
+@router.post("/update/dismiss")
+@csrf_protect
+def api_update_dismiss(
+    request: Request,
+    config: Config = Depends(get_config),
+    username: str = Depends(require_auth),
+    _rate_limit=Depends(settings_rate_limit),
+):
+    """Hide the banner for the currently known release tag."""
+    checker = _update_checker(request)
+    state = checker.state if checker is not None else UpdateState()
+    data = state.load()
+    latest = data.get("latest_seen_tag")
+    if latest:
+        data["dismissed_tag"] = latest
+        state.save(data)
+    _audit_log("update_dismissed", {"tag": latest}, request)
+    return {"status": "ok", "dismissed_tag": latest}
 
 
 # ---------------------------------------------------------------------------

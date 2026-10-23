@@ -66,6 +66,11 @@
           </div>
         </div>
       </header>
+      <div class="update-banner" id="update-banner" hidden>
+        <span id="update-banner-text"></span>
+        <a id="update-banner-link" class="update-banner-link" target="_blank" rel="noopener noreferrer" hidden>View release</a>
+        <button type="button" class="btn btn-small btn-secondary" id="update-banner-dismiss">Dismiss</button>
+      </div>
       <div class="content">
         {% block content %}{% endblock %}
       </div>
@@ -88,6 +93,56 @@
 
   <script src="/static/js/dom-safe.js?v={{ static_version }}"></script>
   <script src="/static/js/app.js?v={{ static_version }}"></script>
+  <script>
+    (function () {
+      const banner = document.getElementById('update-banner');
+      if (!banner) return;
+      const textEl = document.getElementById('update-banner-text');
+      const linkEl = document.getElementById('update-banner-link');
+      const dismissBtn = document.getElementById('update-banner-dismiss');
+      let currentTag = null;
+
+      function renderBanner(status) {
+        if (!status || !status.update_available || !status.latest_version) {
+          banner.hidden = true;
+          currentTag = null;
+          return;
+        }
+        currentTag = status.latest_version;
+        textEl.textContent = 'A new version is available: ' + status.latest_version +
+          (status.current_version ? ' (you are running v' + status.current_version + ')' : '');
+        if (status.release_url && status.release_url.indexOf('https://') === 0) {
+          linkEl.href = status.release_url;
+          linkEl.hidden = false;
+        } else {
+          linkEl.hidden = true;
+        }
+        banner.hidden = false;
+      }
+
+      async function refreshUpdateStatus() {
+        try {
+          const resp = await fetch('/api/update/status', { headers: { 'Accept': 'application/json' } });
+          if (!resp.ok) return;
+          renderBanner(await resp.json());
+        } catch (e) { /* update check is best-effort */ }
+      }
+
+      dismissBtn.addEventListener('click', async function () {
+        if (!currentTag) return;
+        try {
+          const resp = await fetch('/api/update/dismiss', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+            body: JSON.stringify({ tag: currentTag }),
+          });
+          if (resp.ok) banner.hidden = true;
+        } catch (e) { /* ignore */ }
+      });
+
+      refreshUpdateStatus();
+    })();
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

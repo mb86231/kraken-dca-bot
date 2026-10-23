@@ -18,6 +18,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from bot.config import Config
 from bot.state import BotState, RuntimeOverrides
 from bot.store import TransactionStore
+from bot.updater import UpdateChecker
 from bot.utils import APP_VERSION, format_crypto, format_currency, format_datetime, mask_secret, safe_load_json
 from web.auth import auth_manager, csrf_protect, first_run_setup, login_post, logout, require_auth
 from web.brute_force import brute_force_protector, check_login_allowed
@@ -75,7 +76,38 @@ async def lifespan(app: FastAPI):
             app.state.bot_state = BotState()
         if not hasattr(app.state, "overrides") or app.state.overrides is None:
             app.state.overrides = RuntimeOverrides()
+
+    # Update ticker (phase 1): announce new GitHub releases on Telegram and
+    # in the alert store. Information only — nothing is ever downloaded.
+    def _announce_release(tag: str, url: str) -> None:
+        message = (
+            f"Update available: {tag} (running {APP_VERSION})."
+            + (f" Release notes: {url}" if url else "")
+        )
+        try:
+            from bot.alerts import create_alert
+
+            create_alert(message, severity="info", source="update")
+        except Exception:
+            logger.exception("update alert creation failed")
+        try:
+            from bot.notifier import Notifier
+
+            Notifier().send(message)
+        except Exception:
+            logger.exception("update telegram notification failed")
+
+    config = getattr(app.state, "config", None)
+    checker = UpdateChecker(
+        enabled=bool(getattr(config, "update_check_enabled", True)),
+        interval_hours=int(getattr(config, "update_check_interval_hours", 24)),
+        on_new_release=_announce_release,
+    )
+    app.state.update_checker = checker
+    checker.start_background()
+
     yield
+    checker.stop()
 
 
 app = FastAPI(title="DCA-Bot Dashboard", version=APP_VERSION, lifespan=lifespan)
