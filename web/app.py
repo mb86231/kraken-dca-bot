@@ -79,29 +79,15 @@ async def lifespan(app: FastAPI):
 
     # Update ticker (phase 1): announce new GitHub releases on Telegram and
     # in the alert store. Information only — nothing is ever downloaded.
-    def _announce_release(tag: str, url: str) -> None:
-        message = (
-            f"Update available: {tag} (running {APP_VERSION})."
-            + (f" Release notes: {url}" if url else "")
-        )
-        try:
-            from bot.alerts import create_alert
-
-            create_alert(message, severity="info", source="update")
-        except Exception:
-            logger.exception("update alert creation failed")
-        try:
-            from bot.notifier import Notifier
-
-            Notifier().send(message)
-        except Exception:
-            logger.exception("update telegram notification failed")
+    # Shared with the settings endpoints so a runtime rebuild of the checker
+    # uses the identical notification behaviour.
+    from web.routers.api import announce_release
 
     config = getattr(app.state, "config", None)
     checker = UpdateChecker(
         enabled=bool(getattr(config, "update_check_enabled", True)),
         interval_hours=int(getattr(config, "update_check_interval_hours", 24)),
-        on_new_release=_announce_release,
+        on_new_release=announce_release,
     )
     app.state.update_checker = checker
     checker.start_background()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING
 
 from fastapi import HTTPException, Request
 
@@ -10,6 +11,10 @@ from bot.config import Config
 from bot.order_execution import OrderAttemptStore
 from bot.state import BotState, RuntimeOverrides
 from bot.store import TransactionStore
+
+if TYPE_CHECKING:
+    from bot.advisor import Advisor
+    from bot.advisor.briefing import BriefingService
 
 
 def _strict_env() -> bool:
@@ -63,3 +68,28 @@ def get_attempt_store(request: Request) -> OrderAttemptStore:
     if _strict_env():
         _missing_dependency("order attempt store")
     return OrderAttemptStore()
+
+
+def get_advisor(request: Request) -> Advisor | None:
+    """The live advisor instance, or None when the bot did not provide one.
+
+    Prefers the bot instance so a hot-reconfigured advisor is returned;
+    falls back to the value injected at server startup (used by tests and
+    when the dashboard runs without a bot).
+
+    Never strict-fails: the status endpoint must keep working so the
+    dashboard can show "advisor not configured" instead of erroring."""
+    bot = getattr(request.app.state, "bot", None)
+    if bot is not None:
+        return getattr(bot, "advisor", None)
+    advisor = getattr(request.app.state, "advisor", None)
+    return advisor
+
+
+def get_briefing(request: Request) -> BriefingService | None:
+    """The live briefing service, or None when the bot did not provide one."""
+    bot = getattr(request.app.state, "bot", None)
+    if bot is not None:
+        return getattr(bot, "briefing", None)
+    briefing = getattr(request.app.state, "briefing", None)
+    return briefing

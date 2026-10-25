@@ -64,6 +64,50 @@
   </div>
   <canvas id="price-chart" class="chart-small"></canvas>
 </div>
+
+<div class="card" id="briefing-card" style="display:none;">
+  <div class="briefing-head">
+    <div>
+      <h2>Morning Briefing <span id="briefing-pair" class="badge">—</span></h2>
+      <p class="muted briefing-sub" id="briefing-date">—</p>
+    </div>
+    <span id="briefing-source" class="badge">—</span>
+  </div>
+
+  <p id="briefing-summary" class="briefing-summary">—</p>
+  <div id="briefing-flags" class="briefing-flags"></div>
+
+  <div class="briefing-kpis">
+    <div class="stat-card briefing-kpi">
+      <div class="stat-label">Last price</div>
+      <div class="stat-value" id="briefing-kpi-price">—</div>
+      <div class="muted briefing-kpi-sub" id="briefing-kpi-price-sub">—</div>
+    </div>
+    <div class="stat-card briefing-kpi">
+      <div class="stat-label">Invested (total)</div>
+      <div class="stat-value" id="briefing-kpi-invested">—</div>
+      <div class="muted briefing-kpi-sub" id="briefing-kpi-invested-sub">—</div>
+    </div>
+    <div class="stat-card briefing-kpi">
+      <div class="stat-label">Monthly budget</div>
+      <div class="stat-value" id="briefing-kpi-budget">—</div>
+      <div class="progress-bar" id="briefing-budget-bar" style="display:none; margin:0.5rem 0 0.25rem;">
+        <div class="progress-fill" id="briefing-budget-fill" style="width:0%"></div>
+      </div>
+      <div class="muted briefing-kpi-sub" id="briefing-kpi-budget-sub">—</div>
+    </div>
+    <div class="stat-card briefing-kpi">
+      <div class="stat-label">Next run</div>
+      <div class="stat-value" id="briefing-kpi-next">—</div>
+      <div class="muted briefing-kpi-sub" id="briefing-kpi-next-sub">—</div>
+    </div>
+  </div>
+
+  <details class="card briefing-details" id="briefing-details" style="display:none;">
+    <summary>Details</summary>
+    <div id="briefing-detail-rows" class="briefing-detail-rows"></div>
+  </details>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -95,6 +139,215 @@
   }
   loadRecentTransactions();
   setInterval(loadRecentTransactions, 30000);
+
+  // Morning briefing card: compact summary, four KPI tiles, collapsible
+  // details. All dynamic content is set via textContent/appendChild —
+  // never innerHTML. Times render in the bot's timezone (Europe/Zurich).
+  const BRIEFING_TZ = 'Europe/Zurich';
+  const PRICE_STALE_MS = 24 * 3600 * 1000;
+
+  function fmtBriefingDT(iso) {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: BRIEFING_TZ, day: '2-digit', month: 'short',
+      year: 'numeric', hour: '2-digit', minute: '2-digit',
+    }).format(d);
+  }
+
+  function fmtQuote(value, currency) {
+    if (value === null || value === undefined || isNaN(Number(value))) return 'Not available';
+    const num = Number(value);
+    if (Math.abs(num) >= 1) return formatCurrency(num, currency);
+    return num.toLocaleString(undefined, { maximumFractionDigits: 6 }) + (currency ? ' ' + currency : '');
+  }
+
+  function relAge(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const mins = Math.round((Date.now() - d.getTime()) / 60000);
+    if (mins < 60) return mins + ' min ago';
+    const hours = Math.round(mins / 60);
+    if (hours < 48) return hours + ' h ago';
+    return Math.round(hours / 24) + ' d ago';
+  }
+
+  function relUntil(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const mins = Math.round(Math.abs(d.getTime() - Date.now()) / 60000);
+    if (mins < 60) return mins + ' min';
+    const hours = Math.round(mins / 60);
+    if (hours < 48) return hours + ' h';
+    return Math.round(hours / 24) + ' d';
+  }
+
+  function briefingFlag(text, cls) {
+    const span = document.createElement('span');
+    span.className = 'badge ' + cls;
+    span.textContent = text;
+    return span;
+  }
+
+  function briefingDetailRow(label, value) {
+    const div = document.createElement('div');
+    div.className = 'briefing-detail-row';
+    div.appendChild(el('span', 'dt', label));
+    div.appendChild(el('span', null, value));
+    return div;
+  }
+
+  async function loadBriefing() {
+    try {
+      const data = await apiGet('/api/advisor/briefings');
+      const card = document.getElementById('briefing-card');
+      if (!card) return;
+      const latest = data.briefings && data.briefings[0];
+      if (!latest) {
+        card.style.display = 'none';
+        return;
+      }
+      card.style.display = '';
+      const v = latest.values || {};
+      const quote = v.base || '';
+      const pair = v.trading_pair || '';
+
+      // Header: pair badge, briefing date + recency, source badge.
+      document.getElementById('briefing-pair').textContent = pair || '—';
+      const dateStr = fmtBriefingDT(latest.generated_at || latest.slot);
+      const age = relAge(latest.generated_at);
+      document.getElementById('briefing-date').textContent =
+        (dateStr || 'Not available') + (age ? ' · ' + age : '');
+
+      const isAi = latest.source === 'ai' && !!latest.narrative;
+      const sourceBadge = document.getElementById('briefing-source');
+      sourceBadge.textContent = isAi ? 'AI narrative' : 'Bot analysis';
+      sourceBadge.className = 'badge' + (isAi ? ' ok' : '');
+      sourceBadge.title = isAi
+        ? 'Summary written by the AI advisor; all values are bot-computed'
+        : 'Summary composed from bot-computed values; the AI narrative was off or unavailable';
+
+      // Anomaly flags: stale price, paused bot, spent budget, overdue run.
+      const flags = document.getElementById('briefing-flags');
+      flags.replaceChildren();
+      const priceAt = new Date(v.last_price_at || '');
+      const priceValid = !isNaN(priceAt.getTime());
+      const priceStale = priceValid && (Date.now() - priceAt.getTime()) > PRICE_STALE_MS;
+      if (priceStale) flags.appendChild(briefingFlag('Price data ' + relAge(v.last_price_at) + ' old', 'warn'));
+      if ((v.bot_status || '') === 'paused') flags.appendChild(briefingFlag('Bot paused', 'warn'));
+      const nextAt = new Date(v.next_cycle_at || '');
+      const nextValid = !isNaN(nextAt.getTime());
+      const nextOverdue = nextValid && nextAt.getTime() < Date.now();
+      if (nextOverdue) flags.appendChild(briefingFlag('Run overdue', 'error'));
+      const budgetLimit = Number(v.budget_limit);
+      const budgetSpent = Number(v.budget_spent);
+      if (budgetLimit > 0 && budgetSpent >= budgetLimit) flags.appendChild(briefingFlag('Monthly budget spent', 'warn'));
+
+      // Summary: AI narrative when present, otherwise composed from values.
+      const summary = document.getElementById('briefing-summary');
+      if (isAi && latest.narrative) {
+        summary.textContent = latest.narrative;
+      } else {
+        const parts = [];
+        if (v.purchase_count != null && v.total_spent != null) {
+          let s = `So far, ${v.purchase_count} ${Number(v.purchase_count) === 1 ? 'buy has' : 'buys have'} invested ${fmtQuote(v.total_spent, quote)}`;
+          if (v.value_now != null) {
+            s += `; the holdings are currently worth ${fmtQuote(v.value_now, quote)}`;
+            if (v.pnl_pct != null) s += ` (${Number(v.pnl_pct) >= 0 ? '+' : ''}${Number(v.pnl_pct).toFixed(1)}%)`;
+          }
+          parts.push(s + '.');
+        } else {
+          parts.push('Investment data is not available.');
+        }
+        if (budgetLimit > 0) {
+          const pct = Math.min(100, Math.round(budgetSpent / budgetLimit * 100));
+          parts.push(`The monthly budget is ${pct}% used (${fmtQuote(v.budget_spent, quote)} of ${fmtQuote(v.budget_limit, quote)}).`);
+        }
+        if (nextValid && !nextOverdue) {
+          parts.push(`Next scheduled run: ${fmtBriefingDT(v.next_cycle_at)} (in ${relUntil(v.next_cycle_at)}).`);
+        } else if (nextOverdue) {
+          parts.push(`The scheduled run of ${fmtBriefingDT(v.next_cycle_at)} is overdue — check whether the bot is paused or stuck.`);
+        } else {
+          parts.push('No upcoming run is scheduled.');
+        }
+        summary.textContent = parts.join(' ');
+      }
+
+      // KPI tiles: last price, invested, monthly budget, next run.
+      document.getElementById('briefing-kpi-price').textContent = fmtQuote(v.last_price, quote);
+      document.getElementById('briefing-kpi-price-sub').textContent =
+        'as of ' + (fmtBriefingDT(v.last_price_at) || 'Not available');
+      document.getElementById('briefing-kpi-invested').textContent = fmtQuote(v.total_spent, quote);
+      document.getElementById('briefing-kpi-invested-sub').textContent =
+        v.purchase_count != null ? `${v.purchase_count} ${Number(v.purchase_count) === 1 ? 'buy' : 'buys'}` : 'Not available';
+      const budgetEl = document.getElementById('briefing-kpi-budget');
+      const bar = document.getElementById('briefing-budget-bar');
+      const fill = document.getElementById('briefing-budget-fill');
+      if (budgetLimit > 0) {
+        budgetEl.textContent = `${fmtQuote(v.budget_spent, quote)} / ${fmtQuote(v.budget_limit, quote)}`;
+        const pct = Math.max(0, Math.min(100, budgetSpent / budgetLimit * 100));
+        bar.style.display = '';
+        fill.style.width = pct + '%';
+        fill.className = 'progress-fill' + (pct >= 100 ? ' danger' : pct >= 80 ? ' warning' : '');
+        document.getElementById('briefing-kpi-budget-sub').textContent = Math.round(pct) + '% used';
+      } else {
+        budgetEl.textContent = 'Not available';
+        bar.style.display = 'none';
+        document.getElementById('briefing-kpi-budget-sub').textContent = 'No monthly budget limit configured';
+      }
+      const nextEl = document.getElementById('briefing-kpi-next');
+      const nextSub = document.getElementById('briefing-kpi-next-sub');
+      if (nextValid && !nextOverdue) {
+        nextEl.textContent = fmtBriefingDT(v.next_cycle_at);
+        nextSub.textContent = 'in ' + relUntil(v.next_cycle_at);
+      } else if (nextOverdue) {
+        nextEl.textContent = fmtBriefingDT(v.next_cycle_at);
+        nextSub.textContent = 'overdue by ' + relUntil(v.next_cycle_at);
+      } else {
+        nextEl.textContent = 'Not available';
+        nextSub.textContent = 'No current slot';
+      }
+
+      // Details: timestamps, estimate (only when plausible), remaining values.
+      const details = document.getElementById('briefing-details');
+      const rows = document.getElementById('briefing-detail-rows');
+      rows.replaceChildren();
+      rows.appendChild(briefingDetailRow('Data as of', fmtBriefingDT(latest.data_timestamp) || 'Not available'));
+      rows.appendChild(briefingDetailRow('Briefing generated', fmtBriefingDT(latest.generated_at) || 'Not available'));
+      rows.appendChild(briefingDetailRow('Price timestamp', fmtBriefingDT(v.last_price_at) || 'Not available'));
+      rows.appendChild(briefingDetailRow('Next run (full)', fmtBriefingDT(v.next_cycle_at) || 'Not available'));
+      const est = Number(v.estimated_buys);
+      rows.appendChild(briefingDetailRow('Estimated buys left',
+        Number.isFinite(est) && est > 0 ? `${est} (estimate)` : 'Not available'));
+      rows.appendChild(briefingDetailRow('Holdings',
+        v.total_amount != null && !isNaN(Number(v.total_amount)) ? formatCrypto(v.total_amount) : 'Not available'));
+      if (v.pnl != null && v.pnl_pct != null && !isNaN(Number(v.pnl)) && !isNaN(Number(v.pnl_pct))) {
+        const sign = Number(v.pnl) >= 0 ? '+' : '−';
+        const pctSign = Number(v.pnl_pct) >= 0 ? '+' : '−';
+        rows.appendChild(briefingDetailRow('P/L',
+          `${sign}${fmtQuote(Math.abs(Number(v.pnl)), quote)} (${pctSign}${Math.abs(Number(v.pnl_pct)).toFixed(1)}%)`));
+      } else {
+        rows.appendChild(briefingDetailRow('P/L', 'Not available'));
+      }
+      rows.appendChild(briefingDetailRow('Bot status',
+        (v.bot_status || 'Not available') + (v.live_trading_enabled ? ' · live trading ON' : ' · live trading OFF')));
+      if (isAi) {
+        try {
+          const status = await apiGet('/api/status');
+          const adv = status && status.advisor;
+          if (adv && adv.provider) {
+            rows.appendChild(briefingDetailRow('AI provider', adv.provider + (adv.model ? ' / ' + adv.model : '')));
+          }
+        } catch (err) { /* advisor details are optional */ }
+      }
+      details.style.display = '';
+    } catch (err) {
+      console.error('Failed to load briefing:', err);
+    }
+  }
+  loadBriefing();
+  setInterval(loadBriefing, 60000);
 
   let priceChart;
   async function loadPriceChart(range = '24h') {

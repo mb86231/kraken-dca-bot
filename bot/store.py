@@ -176,7 +176,11 @@ class TransactionStore:
         return total_amount, avg_price, last_price, total_spent
 
     def get_monthly_spent(self, trading_pair: str, deposit_day: int, buy_hour: int = 0) -> float:
-        """Return fiat spent in the current deposit cycle."""
+        """Return fiat spent in the current deposit cycle by real orders only.
+
+        Simulated (dry-run) transactions are excluded so a test phase never
+        eats into the budget that live buys are checked against.
+        """
         now = utc_now()
         cycle_started = now.day > deposit_day or (now.day == deposit_day and now.hour >= buy_hour)
         if cycle_started:
@@ -189,6 +193,7 @@ class TransactionStore:
             tx
             for tx in self.transactions
             if tx.trading_pair == trading_pair
+            and not tx.simulated
             and datetime.fromisoformat(tx.date) >= period_start
         ]
         return sum(tx.amount * tx.price for tx in pair_txs)

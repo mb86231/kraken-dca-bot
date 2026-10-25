@@ -45,6 +45,9 @@ SECTION_ENV_VARS: Dict[str, Dict[str, str]] = {
         "scopes": "OIDC_SCOPES",
         "allowed_subjects": "OIDC_ALLOWED_SUBJECTS",
     },
+    "advisor": {
+        "api_key": "AI_ADVISOR_API_KEY",
+    },
 }
 
 SECTION_STORE_KEYS: Dict[str, Dict[str, str]] = {
@@ -66,6 +69,9 @@ SECTION_STORE_KEYS: Dict[str, Dict[str, str]] = {
         "redirect_uri": "oidc_redirect_uri",
         "scopes": "oidc_scopes",
         "allowed_subjects": "oidc_allowed_subjects",
+    },
+    "advisor": {
+        "api_key": "ai_advisor_api_key",
     },
 }
 

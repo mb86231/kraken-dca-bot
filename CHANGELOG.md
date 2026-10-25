@@ -8,6 +8,87 @@ Releases are tagged `v*` and published as container images to
 `ghcr.io/mb86231/kraken-dca-bot:<tag>` (plus `:latest`). To update a running
 installation, see **Updates** in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
+## [1.4.0] — 2026-10-25
+
+The optional **AI advisor** layer. Everything is off by default, every
+function has its own switch plus a global kill switch, and the advisor is
+strictly advisory — it can never place orders, move budgets, or change
+strategy parameters. Bring your own OpenAI-compatible API endpoint (or
+Ollama); the API key is stored in the local secrets file (0600), never in
+`config.json`.
+
+### Added
+
+- **AI advisor foundation**: provider abstraction (OpenAI-compatible APIs
+  and Ollama) with local schema validation, timeouts, retries, circuit
+  breaker, and request/token/cost limits. If the AI is unreachable or
+  returns garbage, the bot keeps running unchanged and says so — a compact
+  deterministic template is used instead.
+- **Morning briefing via Telegram**: scheduled report (daily/weekly/monthly,
+  configurable time) with bot-computed numbers only — price, invested
+  amount, P/L in percent, budget, next cycle. The AI optionally writes a
+  short narrative; without AI the template briefing is sent. Content
+  sections are selectable (Current View / Bot View / News).
+- **Alert explainer**: AI-written plain-language explanations for bot
+  alerts, delivered asynchronously to Telegram. Advisory only.
+- **Dashboard integration**: advisor status dot in the navigation, advisor
+  and reporting settings tabs (grouped cards), test-briefing button with
+  provider error surfacing, briefing card on the dashboard.
+- **AI narrative customization**: `narrative_focus` (market / portfolio /
+  plan / news) selects what the AI covers, `narrative_max_words` bounds the
+  length (40–400, default 120), and `custom_prompt` replaces the default
+  task text with a user template (`{pair}`, `{price}`, `{invested}`,
+  `{pnl_pct}`, `{next_run}`, …). Safety rules are unchanged: the bot
+  supplies every number, the AI only writes prose, no financial advice.
+- **News blocks** (deterministic, no AI tokens): `news_general` and
+  `news_pair` briefing sections. The bot fetches the configured RSS/Atom
+  `news_feeds` itself (default: CoinDesk, Cointelegraph; short cache,
+  failing feeds skipped) and filters pair news by base asset. With the
+  `news` focus topic, the AI narrative may comment on the headlines.
+- **Hot reload**: saving the advisor API key or advisor settings rebuilds
+  the advisory stack in the running bot — no restart needed.
+
+### Fixed
+
+- **Update check with pre-release versions**: a running beta like
+  `1.4.0-beta.1` no longer disables the update ticker — the final release
+  of the same version (e.g. v1.4.0) is correctly offered as an update.
+
+## [1.3.4] — 2026-10-25
+
+### Added
+
+- **Settings → System tab.** System health (bot process, exchange API,
+  Telegram, storage, runtime info) and the update-check state now live in a
+  dedicated *System* tab instead of cluttering the strategy page. The
+  last-update-check time is shown as a formatted date, and a dismissed
+  update banner stays dismissed across page loads.
+- **Hot reload: most settings apply without a restart.** Saving exchange
+  credentials, the live-trading toggle, the update-check configuration, or
+  strategy settings now rebuilds the affected runtime component in the
+  running bot (e.g. the Kraken API client is swapped immediately). A restart
+  is only needed for the few settings that still require it — the UI says
+  so where applicable.
+- **Poll-interval hint.** The settings page now explains the minimum poll
+  interval and why a lower value is not accepted.
+
+### Fixed
+
+- **Audit hardening F1–F6** (see `docs/` audit report; regression tests in
+  `tests/test_audit_fixes.py`):
+  - F1: a `deposit_day` of 31 no longer crashes the trading loop in
+    30-day months — cycle computation clamps the day to the month's end.
+  - F2: orders stuck in `SUBMITTED` are reconciled against Kraken instead
+    of blocking every later buy.
+  - F3: dry-run buys no longer consume real budget accounting.
+  - F4: resolve endpoints guard against inconsistent state and return 409
+    instead of masking errors.
+  - F5: order placement respects the remaining budget precisely.
+  - F6: an unexpected error inside the trading loop (API shape change,
+    calendar edge case, lock timeout) no longer kills the bot — the loop
+    logs the error, records it in state, raises a throttled alert, and
+    backs off one poll cycle.
+
 ## [1.3.3] — 2026-10-24
 
 ### Added
@@ -54,6 +135,16 @@ installation, see **Updates** in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
   versa), and a drop beyond the deepest tier uses the deepest tier's
   amount instead of falling back to the smaller base amount. Tier labels
   ("Dynamic -2%") are now truthful.
+
+### Fixed
+
+- **Dashboard test briefing behind a reverse proxy**: a slow or unreachable
+  AI provider made the manual test send outlive the proxy timeout, so the
+  UI showed a bare `504` instead of the real error. The test path now uses
+  a single provider attempt with the timeout capped at 90 s (below the
+  reverse-proxy limit; reasoning models need 40–50 s for briefing
+  prompts), and the UI explains gateway timeouts. The scheduled briefing
+  is unaffected and keeps the configured provider timeout/retries.
 
 ## [1.3.0] — 2026-10-08
 

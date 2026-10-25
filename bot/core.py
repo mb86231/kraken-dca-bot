@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import os
 import sys
 import threading
@@ -41,6 +42,16 @@ MIN_ORDER_CRYPTO_AMOUNT_DEMO = 0.00001
 CYCLE_GRACE_HOURS = 48
 
 
+def _clamp_day_to_month(year: int, month: int, day: int) -> int:
+    """Clamp ``day`` to the last valid day of the given month.
+
+    ``deposit_day=31`` in a 30-day month would make ``datetime.replace()``
+    raise ``ValueError: day is out of range`` and kill the trading loop, so
+    every cycle computation clamps instead (31 in April becomes 30).
+    """
+    return min(day, calendar.monthrange(year, month)[1])
+
+
 class KrakenDCA:
     """Main DCA application."""
 
@@ -69,6 +80,7 @@ class KrakenDCA:
         self.state = state or BotState(persist=True)
         self.overrides = overrides or RuntimeOverrides()
         self._stop_event = threading.Event()
+        self._loop_error_alerts: Dict[str, datetime] = {}
         self.order_executor = OrderExecutor(
             api=self.api,
             store=self.store,
@@ -76,6 +88,11 @@ class KrakenDCA:
             state=self.state,
             config=self.config,
         )
+
+        # AI advisor (story A1): advisory-only layer, off by default, never
+        # on the buy path. Construction never raises — a misconfigured
+        # advisor degrades to a disabled stub with a recorded reason.
+        self._build_advisor_stack()
 
         # Seed last_cycle_at from existing scheduled transactions on first run
         # so a restarted bot can recover the correct cycle instead of jumping
@@ -86,6 +103,100 @@ class KrakenDCA:
         # Seed demo data if in demo mode
         if is_demo_mode():
             seed_demo_transactions(self.store, pair=self.config.trading_pair)
+
+    def _build_advisor_stack(self) -> None:
+        """(Re)build the advisory layer from the current config.
+
+        Advisory-only: never touches the buy path. Construction never raises
+        so a misconfiguration degrades to a disabled stub instead of breaking
+        the bot."""
+        from bot.advisor import Advisor
+        from bot.advisor.briefing import BriefingService, make_snapshot_fn
+        from bot.advisor.explainer import AlertExplainer
+
+        self.advisor = Advisor.from_config(self.config)
+        self.briefing = BriefingService(
+            self.advisor,
+            self.notifier,
+            make_snapshot_fn(self.config, self.state, self.store),
+            schedule=self.advisor.settings.briefing_time,
+            frequency=self.config.advisor_briefing_frequency,
+            weekday=self.config.advisor_briefing_weekday,
+            month_day=self.config.advisor_briefing_month_day,
+            sections=self.config.advisor_briefing_sections,
+            narrative_focus=self.config.advisor_narrative_focus,
+            custom_prompt=self.config.advisor_custom_prompt,
+            narrative_max_words=self.config.advisor_narrative_max_words,
+            news_feeds=self.config.advisor_news_feeds,
+        )
+        if self.advisor.feature_enabled("briefing"):
+            self.briefing.start()
+        # A3: AI explanations for alerts, asynchronously and advisory-only.
+        self.alert_explainer = AlertExplainer(self.advisor, self.notifier)
+        if self.advisor.feature_enabled("explainer"):
+            from bot.alerts import set_explainer_hook
+
+            set_explainer_hook(self.alert_explainer.request_explanation)
+
+    def reload_api_client(self) -> None:
+        """Rebuild the Kraken API client from the current config.
+
+        Called after exchange credentials or the live-trading flag change at
+        runtime so they take effect without a restart. The order executor
+        reads self.api on every call, so swapping the attribute is safe.
+        """
+        if is_demo_mode():
+            self.api = DemoKrakenAPI(self.config.api_key, self.config.api_secret)
+        else:
+            self.api = KrakenAPI(self.config.api_key, self.config.api_secret)
+        self.order_executor.api = self.api
+
+    def reconfigure_advisor(self) -> None:
+        """Rebuild the advisory stack from the current config.
+
+        Stops the briefing scheduler and detaches the alert-explainer hook
+        before rebuilding, so disabling a feature at runtime also takes
+        effect without a restart. Call config.reload() first so the rebuilt
+        stack sees the new settings.
+        """
+        try:
+            self.briefing.stop()
+        except Exception:
+            pass
+        from bot.alerts import set_explainer_hook
+
+        set_explainer_hook(None)
+        self._build_advisor_stack()
+
+    def _survive_loop_error(
+        self,
+        error: Exception,
+        context: str,
+        wait_seconds: int | None = None,
+    ) -> None:
+        """Record and back off after an unexpected trading-loop error.
+
+        The loop must never die on a transient anomaly (API shape change,
+        calendar edge case, lock timeout): the error is logged, written to
+        the bot state, surfaced as an alert throttled to one per 15 minutes
+        per distinct message, and the caller backs off one poll cycle.
+        """
+        safe_error = redact_sensitive(str(error))
+        get_logger().warning(f"{context}: {safe_error}")
+        self.state.update(last_error=safe_error, last_error_at=now_tz())
+        self.state.warning(safe_error)
+        key = f"{context}: {safe_error}"
+        now = now_tz()
+        last_alert = self._loop_error_alerts.get(key)
+        if last_alert is None or (now - last_alert).total_seconds() >= 900:
+            create_alert(f"{context}: {safe_error}", "error")
+            self._loop_error_alerts[key] = now
+        if wait_seconds is None:
+            try:
+                wait_seconds = int(self.config.poll_interval_seconds)
+            except (TypeError, ValueError):
+                wait_seconds = 60
+        self._stop_event.wait(min(max(wait_seconds, 5), 300))
 
     def write_health(self):
         """Write a structured heartbeat file for container health checks.
@@ -118,6 +229,7 @@ class KrakenDCA:
         being killed after the stop grace period.
         """
         self._stop_event.set()
+        self.briefing.stop()
         self.state.update(status="stopped")
         self.state.wake()
 
@@ -262,9 +374,14 @@ class KrakenDCA:
         self.state.update(last_cycle_at=datetime.fromisoformat(last_tx.date))
 
     def _normalize_cycle_time(self, dt: datetime) -> datetime:
-        """Snap a datetime to the configured deposit day and buy hour."""
+        """Snap a datetime to the configured deposit day and buy hour.
+
+        Days beyond the month's end clamp to the last day of ``dt``'s month so
+        short months never raise ValueError (deposit_day=31 in April becomes
+        April 30)."""
+        day = _clamp_day_to_month(dt.year, dt.month, self.config.deposit_day)
         return dt.replace(
-            day=self.config.deposit_day,
+            day=day,
             hour=self.config.buy_hour,
             minute=0,
             second=0,
@@ -325,15 +442,22 @@ class KrakenDCA:
                     next_cycle = add_months(next_cycle, 1)
                 period_end = next_cycle
             else:
-                current_day = now.day
-                if current_day < self.config.deposit_day:
-                    period_end = now.replace(day=self.config.deposit_day, hour=buy_hour, minute=0, second=0, microsecond=0)
-                elif current_day == self.config.deposit_day and now.hour <= buy_hour:
-                    period_end = now.replace(hour=buy_hour, minute=0, second=0, microsecond=0)
-                elif now.month == 12:
-                    period_end = now.replace(year=now.year + 1, month=1, day=self.config.deposit_day, hour=buy_hour, minute=0, second=0, microsecond=0)
+                # Clamp the deposit day to months that are shorter than it
+                # (e.g. 31 in April) so replace() can never raise ValueError.
+                deposit_day = _clamp_day_to_month(now.year, now.month, self.config.deposit_day)
+                if now.month == 12:
+                    rollover_year, rollover_month = now.year + 1, 1
                 else:
-                    period_end = now.replace(month=now.month + 1, day=self.config.deposit_day, hour=buy_hour, minute=0, second=0, microsecond=0)
+                    rollover_year, rollover_month = now.year, now.month + 1
+                rollover_day = _clamp_day_to_month(rollover_year, rollover_month, self.config.deposit_day)
+
+                current_day = now.day
+                if current_day < deposit_day:
+                    period_end = now.replace(day=deposit_day, hour=buy_hour, minute=0, second=0, microsecond=0)
+                elif current_day == deposit_day and now.hour <= buy_hour:
+                    period_end = now.replace(hour=buy_hour, minute=0, second=0, microsecond=0)
+                else:
+                    period_end = now.replace(year=rollover_year, month=rollover_month, day=rollover_day, hour=buy_hour, minute=0, second=0, microsecond=0)
             remaining_hours = (period_end - now).total_seconds() / 3600
 
         # Get current price and available balance
@@ -534,6 +658,7 @@ class KrakenDCA:
                 simulated=False,
                 cycle_time=cycle_time,
                 dynamic_tier=dynamic_tier,
+                budget_overridden=budget_overridden,
                 on_confirmed=_on_confirmed,
             )
 
@@ -744,9 +869,13 @@ class KrakenDCA:
             while not self._stop_event.is_set():
                 # Apply runtime overrides (stop/pause/manual cycle) before any
                 # pending order work, so a pause takes effect before retries.
-                self._check_runtime_overrides()
-                # Advance pending order retries and reconciliation without blocking.
-                self.order_executor.process_pending()
+                try:
+                    self._check_runtime_overrides()
+                    # Advance pending order retries and reconciliation without blocking.
+                    self.order_executor.process_pending()
+                except Exception as e:
+                    self._survive_loop_error(e, "Order loop error")
+                    continue
                 if self.state.paused:
                     self.state.update(status="paused")
                     self.write_health()
@@ -757,47 +886,54 @@ class KrakenDCA:
                         continue
                     continue
 
-                self.state.update(status="waiting")
-                next_buy_time, hours_until_buy, remaining_hours, max_buys = self.calculate_next_buy()
-                self.state.update(next_cycle_at=next_buy_time, estimated_buys=max_buys)
+                try:
+                    self.state.update(status="waiting")
+                    next_buy_time, hours_until_buy, remaining_hours, max_buys = self.calculate_next_buy()
+                    self.state.update(next_cycle_at=next_buy_time, estimated_buys=max_buys)
 
-                # Get current balance and calculate stats
-                current_price = self.api.get_ticker(self.config.trading_pair)
-                self.state.update(last_price=current_price, last_price_at=now_tz())
-                balance = self.api.get_balance()
-                fiat_currency = self.get_fiat_currency()
-                available_fiat = self.get_fiat_balance(balance)
+                    # Get current balance and calculate stats
+                    current_price = self.api.get_ticker(self.config.trading_pair)
+                    self.state.update(last_price=current_price, last_price_at=now_tz())
+                    balance = self.api.get_balance()
+                    fiat_currency = self.get_fiat_currency()
+                    available_fiat = self.get_fiat_balance(balance)
 
-                # Calculate estimated buy actions
-                cost_per_buy = self.config.crypto_amount * current_price
-                estimated_buys = int(available_fiat / cost_per_buy) if cost_per_buy > 0 else 0
+                    # Calculate estimated buy actions
+                    cost_per_buy = self.config.crypto_amount * current_price
+                    estimated_buys = int(available_fiat / cost_per_buy) if cost_per_buy > 0 else 0
 
-                # Get last buy price for dip detection
-                _, _, last_buy_price, _ = self.store.get_statistics(self.config.trading_pair)
-                dip_factor = 1.0 - (self.config.dip_threshold_percent / 100.0)
-                dip_threshold = last_buy_price * dip_factor if last_buy_price > 0 else 0
+                    # Get last buy price for dip detection
+                    _, _, last_buy_price, _ = self.store.get_statistics(self.config.trading_pair)
+                    dip_factor = 1.0 - (self.config.dip_threshold_percent / 100.0)
+                    dip_threshold = last_buy_price * dip_factor if last_buy_price > 0 else 0
 
-                # Format the next buy time with timezone
-                formatted_time = next_buy_time.strftime("%Y-%m-%d %H:%M:%S %Z")
-                poll_minutes = self.config.poll_interval_seconds // 60
+                    # Format the next buy time with timezone
+                    formatted_time = next_buy_time.strftime("%Y-%m-%d %H:%M:%S %Z")
+                    poll_minutes = self.config.poll_interval_seconds // 60
 
-                print(f"{Colors.BOLD}Next scheduled buy: {Colors.CYAN}{formatted_time}{Colors.RESET}")
-                print(f"Current price: {Colors.CYAN}{current_price:.2f} {fiat_currency}{Colors.RESET}")
-                if self.config.dynamic_dca_enabled:
-                    reference_price = self.get_reference_price()
-                    change_pct = ((current_price - reference_price) / reference_price * 100) if reference_price > 0 else 0.0
-                    resolved = self.resolve_buy_amount(current_price)
-                    print(f"Dynamic reference: {Colors.CYAN}{reference_price:.2f} {fiat_currency}{Colors.RESET}")
-                    print(f"Price change: {Colors.CYAN}{change_pct:+.1f}%{Colors.RESET}")
-                    print(f"Resolved buy amount: {Colors.CYAN}{resolved:.8f} BTC{Colors.RESET}")
-                    print(f"Dynamic cooldown: {Colors.CYAN}{self.config.dynamic_dca_cooldown_hours}h{Colors.RESET}")
-                else:
-                    print(f"Dip buy threshold ({self.config.dip_threshold_percent}%): {Colors.CYAN}{dip_threshold:.2f} {fiat_currency}{Colors.RESET}")
-                    print(f"Dip buy cooldown: {Colors.CYAN}{self.config.dip_buy_cooldown_hours}h{Colors.RESET}")
-                print(f"Current fiat available: {Colors.CYAN}{available_fiat:.2f} {fiat_currency}{Colors.RESET}")
-                print(f"Estimated buy actions till deposit day: {Colors.CYAN}{estimated_buys}{Colors.RESET}")
-                print(f"Remaining hours until deposit day: {Colors.CYAN}{remaining_hours}{Colors.RESET}")
-                print(f"Monitoring every {poll_minutes} minutes...\n")
+                    print(f"{Colors.BOLD}Next scheduled buy: {Colors.CYAN}{formatted_time}{Colors.RESET}")
+                    print(f"Current price: {Colors.CYAN}{current_price:.2f} {fiat_currency}{Colors.RESET}")
+                    if self.config.dynamic_dca_enabled:
+                        reference_price = self.get_reference_price()
+                        change_pct = ((current_price - reference_price) / reference_price * 100) if reference_price > 0 else 0.0
+                        resolved = self.resolve_buy_amount(current_price)
+                        print(f"Dynamic reference: {Colors.CYAN}{reference_price:.2f} {fiat_currency}{Colors.RESET}")
+                        print(f"Price change: {Colors.CYAN}{change_pct:+.1f}%{Colors.RESET}")
+                        print(f"Resolved buy amount: {Colors.CYAN}{resolved:.8f} BTC{Colors.RESET}")
+                        print(f"Dynamic cooldown: {Colors.CYAN}{self.config.dynamic_dca_cooldown_hours}h{Colors.RESET}")
+                    else:
+                        print(f"Dip buy threshold ({self.config.dip_threshold_percent}%): {Colors.CYAN}{dip_threshold:.2f} {fiat_currency}{Colors.RESET}")
+                        print(f"Dip buy cooldown: {Colors.CYAN}{self.config.dip_buy_cooldown_hours}h{Colors.RESET}")
+                    print(f"Current fiat available: {Colors.CYAN}{available_fiat:.2f} {fiat_currency}{Colors.RESET}")
+                    print(f"Estimated buy actions till deposit day: {Colors.CYAN}{estimated_buys}{Colors.RESET}")
+                    print(f"Remaining hours until deposit day: {Colors.CYAN}{remaining_hours}{Colors.RESET}")
+                    print(f"Monitoring every {poll_minutes} minutes...\n")
+                except Exception as e:
+                    # An unexpected error (API shape change, calendar edge,
+                    # lock timeout) must never kill the trading loop: log it,
+                    # surface a throttled alert, and back off one poll cycle.
+                    self._survive_loop_error(e, "Cycle calculation error")
+                    continue
 
                 # Track balance for deposit detection
                 previous_fiat = available_fiat

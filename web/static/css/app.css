@@ -401,6 +401,80 @@ a:hover { text-decoration: underline; }
   color: var(--text);
 }
 
+.card-subheading {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 1.25rem 0 0.75rem;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Checkbox rows: control sits immediately beside its clickable label */
+.form-group input[type="checkbox"] {
+  width: auto;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text);
+  cursor: pointer;
+  margin-bottom: 0.35rem;
+}
+
+.check input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.check-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+/* Collapsible advanced settings */
+details.card summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text);
+  list-style: none;
+}
+
+details.card summary::before {
+  content: "▸ ";
+  color: var(--muted);
+}
+
+details.card[open] summary::before {
+  content: "▾ ";
+}
+
+details.card summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Advisor actions: primary save on the left, destructive restart apart */
+.advisor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.advisor-actions-primary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .stat-card .stat-label {
   font-size: 0.8rem;
   color: var(--muted);
@@ -431,6 +505,7 @@ a:hover { text-decoration: underline; }
 .badge.error { background: rgba(196, 48, 48, 0.12); color: var(--red); }
 .badge.ok { background: rgba(23, 122, 72, 0.12); color: var(--green); }
 .badge.warn { background: rgba(201, 125, 10, 0.15); color: var(--accent); }
+.badge.neutral { background: var(--surface-2); color: var(--muted); }
 
 .error { color: var(--red); }
 
@@ -843,4 +918,145 @@ th {
 
 .update-banner-link {
   white-space: nowrap;
+}
+
+/* System tab: health tiles and update chips */
+.health-status-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.health-tile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.7rem 1rem;
+}
+
+.health-tile-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.update-state-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.update-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.85rem;
+}
+
+.update-chip-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.update-chip-value {
+  font-family: var(--font-mono);
+  font-weight: 600;
+/* Morning briefing card (dashboard) */
+.briefing-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.briefing-sub {
+  margin: 0.15rem 0 0;
+  font-size: 0.85rem;
+}
+
+.briefing-summary {
+  margin: 0.85rem 0 0.5rem;
+  line-height: 1.55;
+  max-width: 80ch;
+}
+
+.briefing-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+}
+
+.briefing-flags:empty {
+  display: none;
+}
+
+.briefing-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+}
+
+.briefing-kpi-sub {
+  font-size: 0.8rem;
+  margin-top: 0.3rem;
+  word-break: break-word;
+}
+
+.briefing-details {
+  margin-top: 1rem;
+}
+
+.briefing-detail-rows {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.35rem 1.5rem;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+.briefing-detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--surface-2);
+  padding-bottom: 0.3rem;
+}
+
+.briefing-detail-row .dt {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+@media (max-width: 1100px) {
+  .briefing-kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .briefing-detail-rows {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .briefing-kpis {
+    grid-template-columns: 1fr;
+  }
 }

@@ -39,6 +39,26 @@
       li.appendChild(text);
       li.appendChild(btn);
       list.appendChild(li);
+
+      // A3: AI explanation — rendered as plain text, clearly labelled.
+      if (a.ai_explanation && a.ai_explanation.text) {
+        const explLi = document.createElement('li');
+        explLi.className = 'alert-explanation';
+        explLi.style.flexDirection = 'column';
+        explLi.style.alignItems = 'flex-start';
+        explLi.style.gap = '0.25rem';
+        explLi.style.borderLeft = '2px solid var(--accent, #c97d0a)';
+        explLi.style.paddingLeft = '0.75rem';
+        const badge = el('span', 'badge warn', 'AI-generated explanation');
+        badge.title = 'Generated ' + (a.ai_explanation.generated_at || 'n/a') +
+          ' · prompt ' + (a.ai_explanation.prompt_version || 'n/a');
+        const body = document.createElement('div');
+        body.textContent = a.ai_explanation.text; // plain text, never HTML
+        body.style.whiteSpace = 'pre-wrap';
+        explLi.appendChild(badge);
+        explLi.appendChild(body);
+        list.appendChild(explLi);
+      }
     });
 
     document.querySelectorAll('.ack-btn').forEach(btn => {

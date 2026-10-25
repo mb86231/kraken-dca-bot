@@ -6,6 +6,12 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from bot.config import (
+    CUSTOM_PROMPT_MAX_CHARS,
+    NEWS_MAX_FEEDS,
+    NARRATIVE_FOCUS_OPTIONS,
+)
+
 
 class LoginPayload(BaseModel):
     username: str
@@ -30,6 +36,87 @@ class DynamicDCAUpdate(BaseModel):
         return v.lower() if v else v
 
 
+class AdvisorFeaturesUpdate(BaseModel):
+    briefing: Optional[bool] = None
+    explainer: Optional[bool] = None
+
+
+class AdvisorUpdate(BaseModel):
+    """Non-secret AI advisor config (story A8). Saved into config.json under
+    the ``advisor`` block; the provider API key is managed separately via the
+    secrets store and never passes through this schema."""
+
+    enabled: Optional[bool] = None
+    features: Optional[AdvisorFeaturesUpdate] = None
+    provider: Optional[str] = None
+    base_url: Optional[str] = None
+    model: Optional[str] = None
+    timeout_seconds: Optional[float] = Field(None, gt=0)
+    max_retries: Optional[int] = Field(None, ge=0)
+    max_parallel: Optional[int] = Field(None, ge=1)
+    daily_request_limit: Optional[int] = Field(None, ge=1)
+    daily_token_limit: Optional[int] = Field(None, ge=1)
+    daily_cost_limit: Optional[float] = Field(None, gt=0)
+    briefing_time: Optional[str] = None
+    temperature: Optional[float] = Field(None, ge=0, le=2)
+    max_tokens: Optional[int] = Field(None, ge=1, le=32768)
+    briefing_frequency: Optional[str] = None
+    briefing_weekday: Optional[int] = Field(None, ge=0, le=6)
+    briefing_month_day: Optional[int] = Field(None, ge=1, le=28)
+    briefing_sections: Optional[dict[str, bool]] = None
+    narrative_focus: Optional[List[str]] = None
+    custom_prompt: Optional[str] = Field(None, max_length=CUSTOM_PROMPT_MAX_CHARS)
+    narrative_max_words: Optional[int] = Field(None, ge=40, le=400)
+    news_feeds: Optional[List[str]] = None
+
+    @field_validator("narrative_focus")
+    @classmethod
+    def known_focus(cls, v):
+        if v is None:
+            return v
+        unknown = [f for f in v if f not in NARRATIVE_FOCUS_OPTIONS]
+        if unknown:
+            raise ValueError(
+                f"advisor.narrative_focus: unknown topics {unknown}; "
+                f"allowed: {list(NARRATIVE_FOCUS_OPTIONS)}"
+            )
+        return v
+
+    @field_validator("news_feeds")
+    @classmethod
+    def sane_feeds(cls, v):
+        if v is None:
+            return v
+        if len(v) > NEWS_MAX_FEEDS:
+            raise ValueError(f"advisor.news_feeds: at most {NEWS_MAX_FEEDS} feeds")
+        for url in v:
+            if not str(url).startswith(("http://", "https://")):
+                raise ValueError(f"advisor.news_feeds: '{url}' is not an http(s) URL")
+        return [str(u).strip() for u in v if str(u).strip()]
+
+    @field_validator("briefing_frequency")
+    @classmethod
+    def known_frequency(cls, v):
+        if v is None:
+            return v
+        v = v.lower()
+        if v not in ("daily", "weekly", "monthly"):
+            raise ValueError(
+                "advisor.briefing_frequency must be 'daily', 'weekly' or 'monthly'"
+            )
+        return v
+
+    @field_validator("provider")
+    @classmethod
+    def known_provider(cls, v):
+        if v is None:
+            return v
+        v = v.lower()
+        if v not in ("openai", "ollama"):
+            raise ValueError("advisor.provider must be 'openai' or 'ollama'")
+        return v
+
+
 class SettingsUpdate(BaseModel):
     mode: Optional[str] = None
     trading_pair: Optional[str] = None
@@ -46,6 +133,7 @@ class SettingsUpdate(BaseModel):
     dca_end_date: Optional[str] = None
     live_trading_enabled: Optional[bool] = None
     dynamic_dca: Optional[DynamicDCAUpdate] = None
+    advisor: Optional[AdvisorUpdate] = None
     preflight_disabled_checks: Optional[List[str]] = None
 
     @field_validator("trading_pair")
@@ -80,6 +168,12 @@ class TelegramUpdate(BaseModel):
 class ExchangeCredentialsUpdate(BaseModel):
     api_key: str = Field(..., min_length=8)
     api_secret: str = Field(..., min_length=8)
+
+
+class AdvisorKeyUpdate(BaseModel):
+    """Provider API key for the AI advisor (secrets store only, never config)."""
+
+    api_key: str = Field(..., min_length=8)
 
 
 class WebAuthUpdate(BaseModel):

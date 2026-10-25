@@ -120,6 +120,7 @@ class OrderAttempt:
     final_outcome: str | None = None
     acknowledged: bool = False
     dynamic_tier: float | None = None
+    budget_overridden: bool = False
     created_at: str = field(default_factory=lambda: utc_now().isoformat())
     updated_at: str = field(default_factory=lambda: utc_now().isoformat())
     notes: str | None = None
@@ -234,12 +235,16 @@ class OrderExecutor:
         simulated: bool = True,
         cycle_time: datetime | None = None,
         dynamic_tier: float | None = None,
+        budget_overridden: bool = False,
         on_confirmed: Callable[[OrderAttempt], None] | None = None,
     ) -> OrderAttempt:
         """Submit a single buy attempt.
 
         If a non-terminal attempt already exists for the same logical cycle,
-        it is returned instead of creating a duplicate.
+        it is returned instead of creating a duplicate. ``budget_overridden``
+        marks a one-time operator-approved buy that may exceed the monthly
+        budget; the flag persists on the attempt so placement-time checks
+        honour the approval.
         """
         cycle_id = _cycle_id(pair, strategy, cycle_time)
         attempt_number = 1
@@ -261,6 +266,7 @@ class OrderExecutor:
             attempt_number=attempt_number,
             userref=userref,
             dynamic_tier=dynamic_tier,
+            budget_overridden=budget_overridden,
         )
         self.attempt_store.save(attempt)
         return self._execute(attempt, on_confirmed=on_confirmed)
@@ -281,6 +287,12 @@ class OrderExecutor:
             elif attempt.state == OrderState.FAILED_PERMANENT.value:
                 self._enter_hold(attempt, "permanent error")
             elif attempt.state == OrderState.UNKNOWN.value:
+                self._process_unknown(attempt, now)
+            elif attempt.state == OrderState.SUBMITTED.value:
+                # Crash between the SUBMITTED save and confirmation: the order
+                # may be filled on Kraken but never booked locally. Reconcile
+                # it the same way as UNKNOWN attempts instead of leaving it
+                # stuck in SUBMITTED forever.
                 self._process_unknown(attempt, now)
             elif attempt.state == OrderState.RETRY_SCHEDULED.value:
                 retry_at = datetime.fromisoformat(attempt.next_retry_at) if attempt.next_retry_at else now
@@ -342,20 +354,42 @@ class OrderExecutor:
         attempt_id: str,
         action: str,  # "confirm", "retry", "cancel"
     ) -> OrderAttempt | None:
-        """Operator-driven resolution for an UNKNOWN order attempt."""
+        """Operator-driven resolution for an UNKNOWN order attempt.
+
+        Raises ValueError for state transitions that are not meaningful, so
+        a double-click or a stale dashboard cannot overwrite a terminal state.
+        """
         attempt = self.attempt_store.get(attempt_id)
         if not attempt:
             return None
 
         if action == "confirm":
+            if attempt.state != OrderState.UNKNOWN.value:
+                raise ValueError(
+                    f"cannot confirm attempt in state {attempt.state!r} "
+                    f"(only UNKNOWN attempts can be confirmed)"
+                )
             self._confirm_from_reconciliation(attempt, "operator confirmed")
         elif action == "retry":
+            if attempt.state not in (
+                OrderState.UNKNOWN.value,
+                OrderState.FAILED_PERMANENT.value,
+            ):
+                raise ValueError(
+                    f"cannot retry attempt in state {attempt.state!r} "
+                    f"(only UNKNOWN or FAILED_PERMANENT attempts can be retried)"
+                )
             attempt.attempt_number = 1
             attempt.state = OrderState.FAILED_TRANSIENT.value
             attempt.error_category = ErrorCategory.TRANSIENT.value
             attempt.error_message = "operator requested retry"
             self._schedule_retry(attempt)
         elif action == "cancel":
+            if attempt.state in (
+                OrderState.CONFIRMED.value,
+                OrderState.CANCELLED.value,
+            ):
+                raise ValueError(f"cannot cancel attempt in terminal state {attempt.state!r}")
             attempt.state = OrderState.CANCELLED.value
             attempt.final_outcome = "cancelled by operator"
             self._safe_notify(f"🚫 Order attempt {attempt_id} cancelled by operator")
@@ -487,6 +521,27 @@ class OrderExecutor:
                 f"{total_required:.2f} {quote} (includes fee + buffer)",
                 details,
             )
+
+        # Monthly budget gate. execute_buy checks the budget at decision time,
+        # but retries and the gap between decision and placement can consume
+        # budget in between, so the limit is re-checked here — unless the
+        # operator approved this specific buy over budget (one-time override).
+        monthly_limit = getattr(self.config, "max_monthly_amount", None) if self.config else None
+        if monthly_limit is not None and not attempt.budget_overridden and self.store is not None:
+            monthly_spent = self.store.get_monthly_spent(
+                attempt.pair,
+                int(getattr(self.config, "deposit_day", 1)),
+                int(getattr(self.config, "buy_hour", 0)),
+            )
+            details["monthly_spent"] = monthly_spent
+            details["monthly_limit"] = monthly_limit
+            if monthly_spent + estimated_cost > monthly_limit:
+                return (
+                    False,
+                    f"monthly spend {monthly_spent:.2f} + estimated cost {estimated_cost:.2f} "
+                    f"would exceed monthly budget {monthly_limit:.2f}",
+                    details,
+                )
 
         return True, "", details
 

@@ -319,3 +319,48 @@ def test_oidc_provider_falls_back_to_store(store: SecretsStore, monkeypatch: pyt
     assert provider.client_secret == "my-client-secret-123456789"
     assert provider.redirect_uri == "https://bot.example.com/auth/callback"
     assert provider.issuer_url.endswith("/")
+
+
+# ---------------------------------------------------------------------------
+# AI advisor section (story A8)
+# ---------------------------------------------------------------------------
+
+def test_advisor_section_roundtrip_masking_and_clear(store: SecretsStore, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("AI_ADVISOR_API_KEY", raising=False)
+    monkeypatch.setenv("SECRETS_PATH", str(store.filepath))
+    store.save_section("advisor", {"api_key": "sk-advisor-secret-123456"})
+    assert store.resolve("advisor")["api_key"] == "sk-advisor-secret-123456"
+
+    status = store.section_status("advisor")
+    assert status["effective_source"] == "secrets_file"
+    assert status["fields"]["api_key"]["set"] is True
+    assert status["fields"]["api_key"]["value"].startswith("•")
+    assert "sk-advisor-secret" not in json.dumps(status)
+
+    assert store.clear_section("advisor") is True
+    assert store.clear_section("advisor") is False
+    assert store.resolve("advisor")["api_key"] is None
+
+
+def test_advisor_section_env_wins(store: SecretsStore, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("AI_ADVISOR_API_KEY", "sk-env-advisor-key-123456")
+    monkeypatch.setenv("SECRETS_PATH", str(store.filepath))
+    store.save_section("advisor", {"api_key": "sk-stored-advisor-key-123456"})
+    assert store.resolve("advisor")["api_key"] == "sk-env-advisor-key-123456"
+    assert store.section_status("advisor")["fields"]["api_key"]["source"] == "environment"
+
+
+def test_advisor_service_resolves_key_from_store(store: SecretsStore, monkeypatch: pytest.MonkeyPatch):
+    """A8: the advisor picks the key up from the secrets store when the env
+    var is unset, and the env var stays authoritative."""
+    from bot.advisor.service import resolve_api_key
+
+    monkeypatch.delenv("AI_ADVISOR_API_KEY", raising=False)
+    monkeypatch.setenv("SECRETS_PATH", str(store.filepath))
+    assert resolve_api_key() == ""
+
+    store.save_section("advisor", {"api_key": "sk-stored-1234567890"})
+    assert resolve_api_key() == "sk-stored-1234567890"
+
+    monkeypatch.setenv("AI_ADVISOR_API_KEY", "sk-env-1234567890")
+    assert resolve_api_key() == "sk-env-1234567890"

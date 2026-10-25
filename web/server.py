@@ -6,7 +6,10 @@ import threading
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from bot.advisor import Advisor
+    from bot.advisor.briefing import BriefingService
     from bot.config import Config
+    from bot.core import KrakenDCA
     from bot.order_execution import OrderAttemptStore
     from bot.state import BotState, RuntimeOverrides
     from bot.store import TransactionStore
@@ -19,6 +22,9 @@ def start_web_server(
     state: "BotState | None" = None,
     overrides: "RuntimeOverrides | None" = None,
     attempt_store: "OrderAttemptStore | None" = None,
+    advisor: "Advisor | None" = None,
+    briefing: "BriefingService | None" = None,
+    bot: "KrakenDCA | None" = None,
 ) -> threading.Thread:
     """Start the FastAPI dashboard server in a background thread.
 
@@ -39,6 +45,11 @@ def start_web_server(
     app.state.bot_state = state
     app.state.overrides = overrides
     app.state.attempt_store = attempt_store
+    app.state.advisor = advisor
+    app.state.briefing = briefing
+    # The live bot instance: lets settings endpoints hot-reload runtime
+    # components (API client, advisory stack) without a restart.
+    app.state.bot = bot
 
     # Default to 0.0.0.0 inside a container so port mappings work; use 127.0.0.1 only when explicitly set.
     host = os.environ.get("WEB_UI_HOST", "0.0.0.0")

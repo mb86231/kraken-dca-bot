@@ -5,9 +5,12 @@
 
 <div class="settings-tabs">
   <button type="button" class="settings-tab active" data-tab="strategy">Strategy</button>
+  <button type="button" class="settings-tab" data-tab="reporting">Reporting</button>
   <button type="button" class="settings-tab" data-tab="preflight">Preflight</button>
   <button type="button" class="settings-tab" data-tab="api-keys">API Keys</button>
+  <button type="button" class="settings-tab" data-tab="advisor">AI</button>
   <button type="button" class="settings-tab" data-tab="auth">Authentication</button>
+  <button type="button" class="settings-tab" data-tab="system">System</button>
 </div>
 
 <div id="tab-strategy">
@@ -15,6 +18,7 @@
 <!-- Strategy Settings -->
 <div class="card">
   <h2>Strategy</h2>
+  <p class="muted">Trading pair, buy schedule and budget limits of the DCA strategy. Saved together with the dynamic DCA tiers below.</p>
   <form id="settings-form" class="grid grid-2">
     <div class="form-group">
       <label for="trading_pair">Trading Pair</label>
@@ -53,17 +57,9 @@
       <div class="form-hint">Only used when dynamic DCA is disabled.</div>
     </div>
     <div class="form-group">
-      <label for="poll_interval_seconds">Poll Interval (seconds, ≥60)</label>
+      <label for="poll_interval_seconds">Poll Interval (seconds)</label>
       <input type="number" id="poll_interval_seconds" name="poll_interval_seconds" min="60">
-    </div>
-    <div class="form-group">
-      <label for="update_check_enabled">Check for Updates</label>
-      <input type="checkbox" id="update_check_enabled">
-      <div class="form-hint">Periodically check the public GitHub releases for a newer version and show a banner.</div>
-    </div>
-    <div class="form-group">
-      <label for="update_check_interval_hours">Update Check Interval (hours, ≥1)</label>
-      <input type="number" id="update_check_interval_hours" name="update_check_interval_hours" min="1">
+      <div class="form-hint">Minimum: 60 seconds — lower values are rejected (Kraken API rate-limit protection). How often the bot checks the price for dynamic buys; takes effect without a restart.</div>
     </div>
     <div class="form-group">
       <label for="max_price">Max Price (0 to disable)</label>
@@ -87,8 +83,8 @@
   <form id="dynamic-dca-form">
     <div class="grid grid-3" style="margin-bottom: 1rem;">
       <div class="form-group">
-        <label for="dynamic_dca_enabled">Enable Dynamic DCA</label>
-        <input type="checkbox" id="dynamic_dca_enabled" name="dynamic_dca_enabled">
+        <label class="check" for="dynamic_dca_enabled"><input type="checkbox" id="dynamic_dca_enabled" name="dynamic_dca_enabled"> <strong>Enable Dynamic DCA</strong></label>
+        <div class="form-hint">Adjusts the buy size based on price change vs. the reference.</div>
       </div>
       <div class="form-group">
         <label for="dynamic_dca_reference">Reference Price</label>
@@ -103,7 +99,7 @@
         <div class="form-hint">Recommended: 24 h or more. Use 0.1–1 h for testing.</div>
       </div>
     </div>
-    <h3 style="font-size: 0.95rem; margin-bottom: 0.5rem;">Tiers</h3>
+    <h3 class="card-subheading">Tiers</h3>
     <p class="muted" style="font-size: 0.85rem; margin-bottom: 0.5rem;">
       Matched from top to bottom. <code>amount = 0</code> means skip the buy. Amounts are in the base crypto asset (e.g. BTC); the <em>≈ Value</em> column shows what each buy is worth at the current price.
     </p>
@@ -134,48 +130,15 @@
 
 <!-- Global actions -->
 <div class="card" style="margin-top: 1rem;">
-  <h2>Save & Apply</h2>
-  <p class="muted">The button below saves the strategy settings and the dynamic DCA settings above.</p>
-  <div class="button-row">
-    <button class="btn btn-primary" id="save-settings">Save All Settings</button>
-    <button class="btn btn-secondary" id="restore-settings">Restore Previous</button>
-    <button class="btn btn-secondary" id="show-runtime-config">Show current server config</button>
-    <button class="btn btn-danger" id="restart-bot">Restart Bot</button>
+  <h2>Save &amp; Apply</h2>
+  <p class="muted">Saves the strategy settings and the dynamic DCA settings above. The bot applies them without a restart — if a saved value seems not to take effect, use the Restart button in the top bar.</p>
+  <div class="advisor-actions">
+    <div class="advisor-actions-primary">
+      <button class="btn btn-primary" id="save-settings">Save All Settings</button>
+      <button class="btn btn-secondary" id="restore-settings">Restore Previous</button>
+    </div>
   </div>
   <div id="settings-message" class="alert" style="display:none; margin-top: 1rem;"></div>
-</div>
-
-<div id="runtime-config-modal" class="modal" style="display:none;">
-  <div class="modal-backdrop"></div>
-  <div class="modal-card">
-    <div class="modal-header">
-      <h2>Current Server Config</h2>
-      <button class="btn btn-small" id="close-runtime-config">Close</button>
-    </div>
-    <p class="muted">This is the configuration currently loaded by the bot process. Sensitive values are masked.</p>
-    <pre id="runtime-config-content" class="code-block">Loading…</pre>
-  </div>
-</div>
-
-<!-- System Health -->
-<div class="card" style="margin-top: 1rem;">
-  <h2>System Health</h2>
-  <div class="grid grid-3">
-    <div class="stat-card">
-      <div class="stat-label">Bot Process</div>
-      <div class="stat-value" id="health-bot">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Exchange API</div>
-      <div class="stat-value" id="health-exchange">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Telegram</div>
-      <div class="stat-value" id="health-telegram">—</div>
-    </div>
-  </div>
-  <h3 style="margin-top: 1.5rem; font-size: 0.95rem;">Details</h3>
-  <div id="health-details" class="muted">Loading…</div>
 </div>
 
 </div><!-- /tab-strategy -->
@@ -241,6 +204,241 @@
 
 <!-- Authentication -->
 </div><!-- /tab-api-keys -->
+<div id="tab-advisor" style="display:none;">
+
+<!-- AI advisor (beta) -->
+
+<div class="card" style="margin-top: 1rem;">
+  <h2>AI Advisor <span class="badge">beta</span></h2>
+  <p class="muted">The advisor delivers the morning briefing and alert explanations in plain language. It is advisory-only: no access to Kraken credentials, no orders, no influence on the buy path — if it fails, the base strategy runs unchanged.</p>
+  <div id="advisor-runtime-status" class="alert" style="display:none;"></div>
+  <div id="advisor-kill-switch-note" class="alert warn" style="display:none;"></div>
+  <div class="form-group" style="margin-bottom:0;">
+    <label class="check" for="advisor_enabled"><input type="checkbox" id="advisor_enabled" name="advisor_enabled"> <strong>Enable AI Advisor</strong></label>
+    <div class="form-hint">Master switch. The configuration below stays visible and is kept while the advisor is off.</div>
+  </div>
+</div>
+
+<div class="card" style="margin-top: 1rem;">
+  <h2>Provider &amp; Connection</h2>
+  <div class="grid grid-2">
+    <div class="form-group">
+      <label for="advisor_provider">Provider</label>
+      <select id="advisor_provider" name="advisor_provider">
+        <option value="openai">OpenAI-compatible API</option>
+        <option value="ollama">Ollama (local, no key needed)</option>
+      </select>
+      <div class="form-hint" id="advisor-provider-hint"></div>
+    </div>
+    <div class="form-group">
+      <label for="advisor_model">Model</label>
+      <input type="text" id="advisor_model" name="advisor_model" placeholder="e.g. gpt-4o-mini" autocomplete="off">
+      <div class="form-hint">Required when the advisor is enabled.</div>
+    </div>
+    <div class="form-group">
+      <label for="advisor_base_url">Base URL (optional)</label>
+      <input type="text" id="advisor_base_url" name="advisor_base_url" placeholder="provider default" autocomplete="off">
+      <div class="form-hint">Leave blank for the provider default. For Ollama, e.g. <code>http://localhost:11434/v1</code>.</div>
+    </div>
+  </div>
+
+  <h3 class="card-subheading">Provider API Key</h3>
+  <p class="muted">Stored in the secrets store (<code>data/secrets.json</code>, 0600) — never in <code>config.json</code>, never returned to the browser. The key is sent to the provider only.</p>
+  <div id="advisor-key-status" class="alert" style="display:none;"></div>
+  <div class="grid grid-2">
+    <div class="form-group" style="margin-bottom:0;">
+      <label for="advisor_api_key">Replace API Key</label>
+      <input type="password" id="advisor_api_key" name="advisor_api_key" placeholder="••••••••••" autocomplete="new-password">
+      <div class="form-hint">Leave blank to keep the current key. Not needed for a local Ollama provider. Saved separately from the settings below.</div>
+    </div>
+  </div>
+  <div class="button-row" style="margin-top: 1rem;">
+    <button class="btn btn-primary" id="save-advisor-key">Save API Key</button>
+    <button class="btn btn-danger" id="clear-advisor-key">Remove Stored Key</button>
+  </div>
+</div>
+
+<div class="card" style="margin-top: 1rem;">
+  <h2>Alert Explanations</h2>
+  <p class="muted">Adds a short plain-language explanation to each alert — delivered as a Telegram follow-up message and shown on the Alerts page. One attempt per alert; a failure never changes the alert itself.</p>
+  <label class="check" for="advisor_feature_explainer" style="margin-bottom:0;"><input type="checkbox" id="advisor_feature_explainer" name="advisor_feature_explainer"> <strong>Enable alert explanations</strong></label>
+</div>
+
+<details class="card" style="margin-top: 1rem;" id="advisor-advanced">
+  <summary>Advanced settings</summary>
+  <h3 class="card-subheading">Model &amp; requests</h3>
+  <div class="grid grid-2">
+    <div class="form-group">
+      <label for="advisor_temperature">Temperature</label>
+      <input type="number" step="0.1" id="advisor_temperature" name="advisor_temperature" min="0" max="2">
+      <div class="form-hint">Sampling temperature (0–2). Some reasoning models only allow 1.</div>
+    </div>
+    <div class="form-group">
+      <label for="advisor_max_tokens">Max tokens</label>
+      <input type="number" step="128" id="advisor_max_tokens" name="advisor_max_tokens" min="1">
+      <div class="form-hint">Response token budget. Reasoning models also count internal thinking — raise this (e.g. 4096) if the model returns empty content.</div>
+    </div>
+    <div class="form-group">
+      <label for="advisor_timeout_seconds">Timeout (seconds)</label>
+      <input type="number" step="1" id="advisor_timeout_seconds" name="advisor_timeout_seconds" min="1">
+    </div>
+    <div class="form-group">
+      <label for="advisor_max_retries">Max retries</label>
+      <input type="number" id="advisor_max_retries" name="advisor_max_retries" min="0">
+      <div class="form-hint">Retries apply to transient provider errors only.</div>
+    </div>
+    <div class="form-group">
+      <label for="advisor_max_parallel">Max parallel requests</label>
+      <input type="number" id="advisor_max_parallel" name="advisor_max_parallel" min="1">
+    </div>
+  </div>
+  <h3 class="card-subheading">Usage limits</h3>
+  <div class="grid grid-2">
+    <div class="form-group">
+      <label for="advisor_daily_request_limit">Daily request limit</label>
+      <input type="number" id="advisor_daily_request_limit" name="advisor_daily_request_limit" min="1">
+    </div>
+    <div class="form-group">
+      <label for="advisor_daily_token_limit">Daily token limit</label>
+      <input type="number" id="advisor_daily_token_limit" name="advisor_daily_token_limit" min="1">
+    </div>
+    <div class="form-group">
+      <label for="advisor_daily_cost_limit">Daily cost limit (USD)</label>
+      <input type="number" step="0.01" id="advisor_daily_cost_limit" name="advisor_daily_cost_limit" min="0.01">
+      <div class="form-hint">Enforced from per-token estimates — a guideline, not a guaranteed billing cap.</div>
+    </div>
+  </div>
+</details>
+
+<div class="card" style="margin-top: 1rem;">
+  <div class="advisor-actions">
+    <div class="advisor-actions-primary">
+      <button class="btn btn-primary" id="save-advisor">Save AI Advisor Settings</button>
+      <span id="advisor-unsaved" class="badge warn" style="display:none;">Unsaved changes</span>
+    </div>
+  </div>
+  <div id="advisor-restart-hint" class="alert warn" style="display:none; margin-top: 1rem;">Settings saved. Restart the bot via the Restart button in the top bar to apply them to the running advisor.</div>
+</div>
+
+</div><!-- /tab-advisor -->
+
+<div id="tab-reporting" style="display:none;">
+
+<div class="card" style="margin-top: 1rem;">
+  <h2>Morning Briefing</h2>
+  <p class="muted">A scheduled Telegram message built from bot-computed values. Pick the schedule and the blocks to include — the deterministic blocks consume no AI tokens. The briefing is sent only while the AI advisor master switch is on (Settings → AI).</p>
+  <div class="form-group">
+    <label class="check" for="advisor_feature_briefing"><input type="checkbox" id="advisor_feature_briefing" name="advisor_feature_briefing"> <strong>Enable morning briefing</strong></label>
+  </div>
+  <div class="grid grid-2">
+    <div class="form-group">
+      <label for="advisor_briefing_time">Send time</label>
+      <input type="time" id="advisor_briefing_time" name="advisor_briefing_time">
+      <div class="form-hint">Europe/Zurich (DST-aware).</div>
+    </div>
+    <div class="form-group">
+      <label for="advisor_briefing_frequency">Frequency</label>
+      <select id="advisor_briefing_frequency" name="advisor_briefing_frequency">
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+      </select>
+    </div>
+    <div class="form-group" id="advisor-weekday-group" style="display:none;">
+      <label for="advisor_briefing_weekday">Weekday</label>
+      <select id="advisor_briefing_weekday" name="advisor_briefing_weekday">
+        <option value="0">Monday</option>
+        <option value="1">Tuesday</option>
+        <option value="2">Wednesday</option>
+        <option value="3">Thursday</option>
+        <option value="4">Friday</option>
+        <option value="5">Saturday</option>
+        <option value="6">Sunday</option>
+      </select>
+    </div>
+    <div class="form-group" id="advisor-monthday-group" style="display:none;">
+      <label for="advisor_briefing_month_day">Day of month</label>
+      <select id="advisor_briefing_month_day" name="advisor_briefing_month_day">
+        <option value="1">1st</option><option value="2">2nd</option><option value="3">3rd</option>
+        <option value="4">4th</option><option value="5">5th</option><option value="6">6th</option>
+        <option value="7">7th</option><option value="8">8th</option><option value="9">9th</option>
+        <option value="10">10th</option><option value="11">11th</option><option value="12">12th</option>
+        <option value="13">13th</option><option value="14">14th</option><option value="15">15th</option>
+        <option value="16">16th</option><option value="17">17th</option><option value="18">18th</option>
+        <option value="19">19th</option><option value="20">20th</option><option value="21">21st</option>
+        <option value="22">22nd</option><option value="23">23rd</option><option value="24">24th</option>
+        <option value="25">25th</option><option value="26">26th</option><option value="27">27th</option>
+        <option value="28">28th</option>
+      </select>
+      <div class="form-hint">Capped at the 28th so the slot exists in every month.</div>
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Message content</label>
+    <div class="form-hint" style="margin-bottom:0.5rem;">Blocks of the Telegram briefing.</div>
+    <div class="check-list">
+      <label class="check" for="advisor_section_market"><input type="checkbox" id="advisor_section_market"> Market price</label>
+      <label class="check" for="advisor_section_portfolio"><input type="checkbox" id="advisor_section_portfolio"> Portfolio &amp; P/L</label>
+      <label class="check" for="advisor_section_budget"><input type="checkbox" id="advisor_section_budget"> Budget &amp; plan</label>
+      <label class="check" for="advisor_section_bot"><input type="checkbox" id="advisor_section_bot"> Bot status</label>
+      <label class="check" for="advisor_section_news_general"><input type="checkbox" id="advisor_section_news_general"> General crypto news <span class="badge">no AI tokens</span></label>
+      <label class="check" for="advisor_section_news_pair"><input type="checkbox" id="advisor_section_news_pair"> Trading-pair news <span class="badge">no AI tokens</span></label>
+      <label class="check" for="advisor_section_narrative"><input type="checkbox" id="advisor_section_narrative"> AI narrative <span class="badge warn">uses AI tokens</span></label>
+    </div>
+  </div>
+  <div class="button-row">
+    <button class="btn btn-secondary" id="test-advisor">Send Test Briefing</button>
+  </div>
+  <div id="advisor-test-result" class="alert" style="display:none; margin-top: 1rem;"></div>
+</div>
+
+<div class="card" style="margin-top: 1rem;">
+  <h2>AI Narrative</h2>
+  <p class="muted">Shown in the briefing when „AI narrative“ is enabled above. The bot supplies every number; the AI only formulates the text. No financial advice, no invented values.</p>
+  <div class="form-group">
+    <label>Focus topics</label>
+    <div class="check-list">
+      <label class="check" for="advisor_focus_market"><input type="checkbox" id="advisor_focus_market"> Market situation</label>
+      <label class="check" for="advisor_focus_portfolio"><input type="checkbox" id="advisor_focus_portfolio"> Portfolio performance</label>
+      <label class="check" for="advisor_focus_plan"><input type="checkbox" id="advisor_focus_plan"> Budget &amp; plan outlook</label>
+      <label class="check" for="advisor_focus_news"><input type="checkbox" id="advisor_focus_news"> Comment on news <span class="badge warn">needs news enabled</span></label>
+    </div>
+  </div>
+  <div class="grid grid-2">
+    <div class="form-group">
+      <label for="advisor_narrative_max_words">Maximum words</label>
+      <input type="number" id="advisor_narrative_max_words" name="advisor_narrative_max_words" min="40" max="400" step="10">
+      <div class="form-hint">40–400, default 120.</div>
+    </div>
+    <div class="form-group">
+      <label for="advisor_custom_prompt">Custom prompt (optional)</label>
+      <textarea id="advisor_custom_prompt" name="advisor_custom_prompt" rows="4" maxlength="2000" placeholder="Empty = default briefing prompt."></textarea>
+      <div class="form-hint">Placeholders: {pair} {price} {invested} {holdings} {value_now} {pnl_pct} {budget_spent} {budget_limit} {next_run} {buys} {bot_status}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top: 1rem;">
+  <h2>News Sources</h2>
+  <p class="muted">RSS/Atom feeds the bot fetches for the news blocks — one URL per line, at most five. The AI provider never goes to the internet; fetching happens on the bot with a short cache. A failing feed is skipped, never blocks the briefing.</p>
+  <div class="form-group" style="margin-bottom:0;">
+    <label for="advisor_news_feeds">Feed URLs</label>
+    <textarea id="advisor_news_feeds" name="advisor_news_feeds" rows="3" spellcheck="false"></textarea>
+  </div>
+</div>
+
+<div class="card" style="margin-top: 1rem;">
+  <div class="advisor-actions">
+    <div class="advisor-actions-primary">
+      <button class="btn btn-primary" id="save-reporting">Save Reporting Settings</button>
+      <span id="reporting-unsaved" class="badge warn" style="display:none;">Unsaved changes</span>
+    </div>
+  </div>
+  <div id="reporting-restart-hint" class="alert warn" style="display:none; margin-top: 1rem;">Settings saved. Restart the bot via the Restart button in the top bar to apply them to the running advisor.</div>
+</div>
+
+</div><!-- /tab-reporting -->
+
 <div id="tab-auth" style="display:none;">
 
 <div class="card" style="margin-top: 1rem;">
@@ -273,8 +471,8 @@
   <p class="muted">Sign in via your Authentik SSO. Settings are stored in the secrets store (<code>data/secrets.json</code>, 0600) and take effect immediately unless the <code>OIDC_*</code> environment variables are set, which take precedence. Local login remains available as a fallback either way.</p>
   <form id="oidc-form" class="grid grid-2" onsubmit="return false;">
     <div class="form-group">
-      <label for="oidc_enabled">Enable Authentik Login</label>
-      <input type="checkbox" id="oidc_enabled" name="oidc_enabled">
+      <label class="check" for="oidc_enabled"><input type="checkbox" id="oidc_enabled" name="oidc_enabled"> <strong>Enable Authentik Login</strong></label>
+      <div class="form-hint">Shows the „Sign in with Authentik“ option on the login page.</div>
     </div>
     <div class="form-group">
       <label for="oidc_issuer_url">Issuer URL</label>
@@ -314,6 +512,87 @@
 </div>
 
 </div><!-- /tab-auth -->
+
+<div id="tab-system" style="display:none;">
+
+<!-- System Health -->
+<div class="card">
+  <h2>System Health</h2>
+  <p class="muted">Live state of the bot process and its integrations. Refreshes automatically while this tab is open.</p>
+  <div class="health-status-row" id="health-status-row">
+    <div class="muted">Loading…</div>
+  </div>
+  <div class="grid grid-3" style="margin-top: 1rem;">
+    <div class="stat-card">
+      <div class="stat-label">Version</div>
+      <div class="stat-value" id="health-version" style="font-size: 1.15rem;">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Uptime</div>
+      <div class="stat-value" id="health-uptime" style="font-size: 1.15rem;">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Server Time</div>
+      <div class="stat-value" id="health-server-time" style="font-size: 1.15rem;">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Timezone</div>
+      <div class="stat-value" id="health-timezone" style="font-size: 1.15rem;">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Last Price Update</div>
+      <div class="stat-value" id="health-price-update" style="font-size: 1.15rem;">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Last Order</div>
+      <div class="stat-value" id="health-last-order" style="font-size: 1.15rem;">—</div>
+    </div>
+  </div>
+</div>
+
+<!-- Updates -->
+<div class="card" style="margin-top: 1rem;">
+  <h2>Updates</h2>
+  <div class="update-state-row" id="update-state-row">
+    <div class="muted">Loading…</div>
+  </div>
+  <form id="system-form" class="grid grid-2">
+    <div class="form-group">
+      <label class="check" for="update_check_enabled"><input type="checkbox" id="update_check_enabled"> <strong>Check for Updates</strong></label>
+      <div class="form-hint">Periodically check the public GitHub releases for a newer version and show a banner.</div>
+    </div>
+    <div class="form-group">
+      <label for="update_check_interval_hours">Update Check Interval (hours, ≥1)</label>
+      <input type="number" id="update_check_interval_hours" name="update_check_interval_hours" min="1">
+    </div>
+  </form>
+  <div class="button-row" style="margin-top: 0.75rem;">
+    <button class="btn btn-primary" id="save-update-check">Save Update Check</button>
+  </div>
+</div>
+
+<!-- Diagnostics -->
+<div class="card" style="margin-top: 1rem;">
+  <h2>Diagnostics</h2>
+  <p class="muted">Inspect the configuration currently loaded by the bot process (sensitive values are masked).</p>
+  <div class="button-row">
+    <button class="btn btn-secondary" id="show-runtime-config">Show loaded server config</button>
+  </div>
+</div>
+
+<div id="runtime-config-modal" class="modal" style="display:none;">
+  <div class="modal-backdrop"></div>
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2>Current Server Config</h2>
+      <button class="btn btn-small" id="close-runtime-config">Close</button>
+    </div>
+    <p class="muted">This is the configuration currently loaded by the bot process. Sensitive values are masked.</p>
+    <pre id="runtime-config-content" class="code-block">Loading…</pre>
+  </div>
+</div>
+
+</div><!-- /tab-system -->
 
 {% endblock %}
 {% block scripts %}
@@ -519,10 +798,32 @@
       else payload[k] = v;
     });
     payload.update_check_enabled = document.getElementById('update_check_enabled').checked;
+    const updateIntervalEl = document.getElementById('update_check_interval_hours');
+    if (updateIntervalEl && updateIntervalEl.value !== '') {
+      payload.update_check_interval_hours = parseInt(updateIntervalEl.value, 10);
+    }
     payload.dynamic_dca = collectDynamicDCA();
     try {
       const data = await apiPut('/api/settings', payload);
       showToast(data.message, 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  // System tab: dedicated save for the update-check settings
+  document.getElementById('save-update-check').addEventListener('click', async () => {
+    const payload = {
+      update_check_enabled: document.getElementById('update_check_enabled').checked,
+    };
+    const intervalEl = document.getElementById('update_check_interval_hours');
+    if (intervalEl && intervalEl.value !== '') {
+      payload.update_check_interval_hours = parseInt(intervalEl.value, 10);
+    }
+    try {
+      const data = await apiPut('/api/settings', payload);
+      showToast(data.message, 'success');
+      loadSystemHealth();
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -534,16 +835,6 @@
       const data = await apiPost('/api/settings/restore');
       showToast(data.message, 'success');
       loadSettings();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  });
-
-  document.getElementById('restart-bot').addEventListener('click', async () => {
-    if (!(await uiConfirm('Restart the bot? The container will restart and apply any saved settings.', { title: 'Restart bot', confirmText: 'Restart' }))) return;
-    try {
-      const data = await apiPost('/api/bot/restart');
-      showToast(data.message, 'success');
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -781,16 +1072,348 @@
     }
   });
 
+  // AI advisor (beta)
+  function renderAdvisorKeyStatus(status) {
+    const el = document.getElementById('advisor-key-status');
+    const field = status.fields.api_key;
+    const source = field.source === 'environment'
+      ? 'environment variable (takes precedence)'
+      : field.source === 'secrets_file'
+        ? `secrets store (${field.value})`
+        : 'not configured';
+    el.style.display = 'block';
+    el.className = 'alert ' + (field.set ? 'ok' : 'warn');
+    el.textContent = `Effective API key: ${source}.`;
+  }
+
+  // Runtime vs saved configuration, dependent-control state and the
+  // unsaved-changes indicator all live here.
+  function updateAdvisorDependentState() {
+    const enabled = document.getElementById('advisor_enabled').checked;
+    document.querySelectorAll('#tab-advisor input, #tab-advisor select').forEach((elControl) => {
+      if (elControl.id === 'advisor_enabled') return;
+      elControl.disabled = !enabled;
+    });
+  }
+
+  function updateAdvisorProviderHint() {
+    const provider = document.getElementById('advisor_provider').value;
+    document.getElementById('advisor-provider-hint').textContent = provider === 'ollama'
+      ? 'Local model — no API key required.'
+      : 'Any OpenAI-compatible endpoint (OpenAI, Kimi Open Platform, …).';
+  }
+
+  function markAdvisorUnsaved() {
+    document.getElementById('advisor-unsaved').style.display = '';
+    document.getElementById('reporting-unsaved').style.display = '';
+  }
+
+  async function renderAdvisorRuntimeStatus(savedEnabled) {
+    const box = document.getElementById('advisor-runtime-status');
+    try {
+      const status = await apiGet('/api/status');
+      const runtime = (status && status.advisor) || null;
+      if (!runtime) {
+        box.style.display = 'none';
+        return;
+      }
+      const stateLabel = runtime.available ? 'active' : (runtime.state || 'disabled');
+      const reason = runtime.reason ? ' — ' + runtime.reason : '';
+      box.style.display = 'block';
+      box.className = 'alert ' + (runtime.available ? 'ok' : 'warn');
+      box.textContent = 'Running configuration (since last restart): ' + stateLabel + reason
+        + '. Saved configuration: ' + (savedEnabled ? 'enabled' : 'disabled') + '.';
+    } catch (err) {
+      box.style.display = 'none';
+    }
+  }
+
+  // Show weekday / day-of-month selectors only for the matching frequency.
+  function updateBriefingScheduleVisibility() {
+    const frequency = document.getElementById('advisor_briefing_frequency').value;
+    document.getElementById('advisor-weekday-group').style.display = frequency === 'weekly' ? '' : 'none';
+    document.getElementById('advisor-monthday-group').style.display = frequency === 'monthly' ? '' : 'none';
+  }
+  document.getElementById('advisor_briefing_frequency').addEventListener('change', updateBriefingScheduleVisibility);
+  document.getElementById('advisor_provider').addEventListener('change', updateAdvisorProviderHint);
+  document.getElementById('advisor_enabled').addEventListener('change', () => {
+    updateAdvisorDependentState();
+    markAdvisorUnsaved();
+  });
+  document.getElementById('tab-advisor').addEventListener('change', (event) => {
+    if (event.target && event.target.id !== 'advisor_enabled') markAdvisorUnsaved();
+  });
+  document.getElementById('tab-reporting').addEventListener('change', () => {
+    markAdvisorUnsaved();
+  });
+
+  async function loadAdvisor() {
+    try {
+      const data = await apiGet('/api/settings/advisor');
+      const a = data.advisor || {};
+      document.getElementById('advisor_enabled').checked = !!a.enabled;
+      document.getElementById('advisor_feature_briefing').checked = !!(a.features && a.features.briefing);
+      document.getElementById('advisor_feature_explainer').checked = !!(a.features && a.features.explainer);
+      document.getElementById('advisor_provider').value = a.provider || 'openai';
+      document.getElementById('advisor_base_url').value = a.base_url || '';
+      document.getElementById('advisor_model').value = a.model || '';
+      document.getElementById('advisor_briefing_time').value = a.briefing_time || '07:00';
+      document.getElementById('advisor_briefing_frequency').value = a.briefing_frequency || 'daily';
+      document.getElementById('advisor_briefing_weekday').value = String(a.briefing_weekday ?? 0);
+      document.getElementById('advisor_briefing_month_day').value = String(a.briefing_month_day ?? 1);
+      updateBriefingScheduleVisibility();
+      const sections = a.briefing_sections || {};
+      document.getElementById('advisor_section_market').checked = sections.market !== false;
+      document.getElementById('advisor_section_portfolio').checked = sections.portfolio !== false;
+      document.getElementById('advisor_section_budget').checked = sections.budget !== false;
+      document.getElementById('advisor_section_bot').checked = sections.bot !== false;
+      document.getElementById('advisor_section_news_general').checked = !!sections.news_general;
+      document.getElementById('advisor_section_news_pair').checked = !!sections.news_pair;
+      document.getElementById('advisor_section_narrative').checked = !!sections.narrative;
+      const focus = a.narrative_focus || [];
+      ['market', 'portfolio', 'plan', 'news'].forEach((topic) => {
+        document.getElementById('advisor_focus_' + topic).checked = focus.includes(topic);
+      });
+      document.getElementById('advisor_narrative_max_words').value = a.narrative_max_words ?? 120;
+      document.getElementById('advisor_custom_prompt').value = a.custom_prompt || '';
+      document.getElementById('advisor_news_feeds').value = (a.news_feeds || []).join('\n');
+      document.getElementById('advisor_temperature').value = a.temperature ?? 0.2;
+      document.getElementById('advisor_max_tokens').value = a.max_tokens ?? 1024;
+      document.getElementById('advisor_timeout_seconds').value = a.timeout_seconds ?? 30;
+      document.getElementById('advisor_max_retries').value = a.max_retries ?? 2;
+      document.getElementById('advisor_max_parallel').value = a.max_parallel ?? 2;
+      document.getElementById('advisor_daily_request_limit').value = a.daily_request_limit ?? 50;
+      document.getElementById('advisor_daily_token_limit').value = a.daily_token_limit ?? 100000;
+      document.getElementById('advisor_daily_cost_limit').value = a.daily_cost_limit ?? 1.0;
+      updateAdvisorProviderHint();
+      updateAdvisorDependentState();
+      renderAdvisorRuntimeStatus(!!a.enabled);
+      document.getElementById('advisor-unsaved').style.display = 'none';
+      document.getElementById('reporting-unsaved').style.display = 'none';
+      document.getElementById('advisor-restart-hint').style.display = 'none';
+      document.getElementById('reporting-restart-hint').style.display = 'none';
+      if (data.key) renderAdvisorKeyStatus(data.key);
+      const ksNote = document.getElementById('advisor-kill-switch-note');
+      if (data.kill_switch_active) {
+        ksNote.style.display = 'block';
+        ksNote.textContent = 'The AI_ADVISOR_ENABLED environment variable is set to "false" — this is the global kill switch. It overrides the settings below and keeps the advisor off until the variable is removed.';
+      } else {
+        ksNote.style.display = 'none';
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  async function saveAdvisorSettings() {
+    const payload = {
+      enabled: document.getElementById('advisor_enabled').checked,
+      features: {
+        briefing: document.getElementById('advisor_feature_briefing').checked,
+        explainer: document.getElementById('advisor_feature_explainer').checked,
+      },
+      provider: document.getElementById('advisor_provider').value,
+      base_url: document.getElementById('advisor_base_url').value.trim(),
+      model: document.getElementById('advisor_model').value.trim(),
+      briefing_time: document.getElementById('advisor_briefing_time').value || '07:00',
+      briefing_frequency: document.getElementById('advisor_briefing_frequency').value,
+      briefing_weekday: parseInt(document.getElementById('advisor_briefing_weekday').value, 10),
+      briefing_month_day: parseInt(document.getElementById('advisor_briefing_month_day').value, 10),
+      briefing_sections: {
+        market: document.getElementById('advisor_section_market').checked,
+        portfolio: document.getElementById('advisor_section_portfolio').checked,
+        budget: document.getElementById('advisor_section_budget').checked,
+        bot: document.getElementById('advisor_section_bot').checked,
+        news_general: document.getElementById('advisor_section_news_general').checked,
+        news_pair: document.getElementById('advisor_section_news_pair').checked,
+        narrative: document.getElementById('advisor_section_narrative').checked,
+      },
+      narrative_focus: ['market', 'portfolio', 'plan', 'news'].filter(
+        (topic) => document.getElementById('advisor_focus_' + topic).checked
+      ),
+      narrative_max_words: parseInt(document.getElementById('advisor_narrative_max_words').value, 10),
+      custom_prompt: document.getElementById('advisor_custom_prompt').value.trim(),
+      news_feeds: document.getElementById('advisor_news_feeds').value
+        .split('\n').map((u) => u.trim()).filter(Boolean),
+      temperature: parseFloat(document.getElementById('advisor_temperature').value),
+      max_tokens: parseInt(document.getElementById('advisor_max_tokens').value, 10),
+      timeout_seconds: parseFloat(document.getElementById('advisor_timeout_seconds').value),
+      max_retries: parseInt(document.getElementById('advisor_max_retries').value, 10),
+      max_parallel: parseInt(document.getElementById('advisor_max_parallel').value, 10),
+      daily_request_limit: parseInt(document.getElementById('advisor_daily_request_limit').value, 10),
+      daily_token_limit: parseInt(document.getElementById('advisor_daily_token_limit').value, 10),
+      daily_cost_limit: parseFloat(document.getElementById('advisor_daily_cost_limit').value),
+    };
+    try {
+      const data = await apiPut('/api/settings', { advisor: payload });
+      showToast(data.message, 'success');
+      document.getElementById('advisor-unsaved').style.display = 'none';
+      document.getElementById('reporting-unsaved').style.display = 'none';
+      // The advisor is built at startup; saved changes need a restart.
+      document.getElementById('advisor-restart-hint').style.display = 'block';
+      document.getElementById('reporting-restart-hint').style.display = 'block';
+      renderAdvisorRuntimeStatus(payload.enabled);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+  // The AI tab and the Reporting tab edit the same advisor settings
+  // (briefing schedule and content live in Reporting); both save buttons
+  // share the payload and behaviour.
+  document.getElementById('save-advisor').addEventListener('click', saveAdvisorSettings);
+  document.getElementById('save-reporting').addEventListener('click', saveAdvisorSettings);
+
+  // Test briefing (story A9): full chain snapshot -> AI -> Telegram, without
+  // consuming the daily slot. All dynamic content below is set via
+  // textContent — never innerHTML.
+  document.getElementById('test-advisor').addEventListener('click', async () => {
+    const btn = document.getElementById('test-advisor');
+    const box = document.getElementById('advisor-test-result');
+    btn.disabled = true;
+    btn.textContent = 'Sending test…';
+    box.style.display = 'block';
+    box.className = 'alert';
+    box.textContent = 'Building snapshot, requesting the model, sending to Telegram…';
+    try {
+      const data = await apiPost('/api/advisor/test');
+      box.className = 'alert ' + (data.ok ? 'ok' : 'error');
+      box.replaceChildren();
+      const head = el('strong', null, data.ok
+        ? (data.telegram_sent ? 'Test briefing sent.' : 'AI reply OK, but Telegram was not delivered.')
+        : 'Test failed.');
+      box.appendChild(head);
+      box.appendChild(document.createTextNode(' ' + (data.message || '')));
+      if (data.latency_ms != null) {
+        box.appendChild(el('div', 'muted', 'Provider latency: ' + data.latency_ms + ' ms'));
+      }
+      if (data.reason) {
+        box.appendChild(el('div', 'muted', data.reason));
+      }
+      if (data.text) {
+        const pre = document.createElement('pre');
+        pre.className = 'code-block';
+        pre.style.marginTop = '0.5rem';
+        pre.textContent = data.text;
+        box.appendChild(pre);
+      }
+    } catch (err) {
+      box.className = 'alert error';
+      box.textContent = /50[24]/.test(String(err && err.message))
+        ? 'Gateway timeout: the advisor chain exceeded the proxy limit — the provider is likely unreachable or very slow. Check the provider URL and model in the AI settings. The scheduled briefing runs in the background and is unaffected.'
+        : (err && err.message) || 'Request failed.';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Send Test Briefing';
+    }
+  });
+
+  document.getElementById('save-advisor-key').addEventListener('click', async () => {
+    const api_key = document.getElementById('advisor_api_key').value.trim();
+    if (!api_key) {
+      showToast('Enter the provider API key.', 'error');
+      return;
+    }
+    try {
+      const data = await apiPut('/api/settings/advisor/key', { api_key });
+      showToast(data.message, 'success');
+      document.getElementById('advisor_api_key').value = '';
+      if (data.key) renderAdvisorKeyStatus(data.key);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  document.getElementById('clear-advisor-key').addEventListener('click', async () => {
+    if (!(await uiConfirm('Remove the stored advisor API key from the secrets store? Environment variables are not affected.', { title: 'Remove advisor API key', confirmText: 'Remove' }))) return;
+    try {
+      const data = await apiPost('/api/settings/advisor/key/clear');
+      showToast(data.message, 'success');
+      if (data.key) renderAdvisorKeyStatus(data.key);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
   // Settings sub-section tabs
   document.querySelectorAll('.settings-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
-      for (const name of ['strategy', 'preflight', 'api-keys', 'auth']) {
+      for (const name of ['strategy', 'preflight', 'api-keys', 'advisor', 'reporting', 'auth', 'system']) {
         document.getElementById('tab-' + name).style.display = (name === tab.dataset.tab) ? '' : 'none';
       }
+      if (tab.dataset.tab === 'system') loadSystemHealth();
     });
   });
+
+  // System health (System tab)
+  function healthTile(label, ok, okText, badText) {
+    const tile = document.createElement('div');
+    tile.className = 'health-tile';
+    tile.appendChild(el('span', 'health-tile-label', label));
+    tile.appendChild(el('span', `badge ${ok ? 'ok' : 'error'}`, ok ? okText : badText));
+    return tile;
+  }
+
+  function updateChip(label, value) {
+    const chip = document.createElement('span');
+    chip.className = 'update-chip';
+    chip.appendChild(el('span', 'update-chip-label', label));
+    chip.appendChild(el('span', 'update-chip-value', value == null || value === '' ? '—' : String(value)));
+    return chip;
+  }
+
+  function formatDateTime(iso) {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  }
+
+  async function loadSystemHealth() {
+    const statusRow = document.getElementById('health-status-row');
+    const updateRow = document.getElementById('update-state-row');
+    if (!statusRow || !updateRow) return;
+    try {
+      const [health, update] = await Promise.all([
+        apiGet('/api/health'),
+        apiGet('/api/update/status'),
+      ]);
+      statusRow.replaceChildren(
+        healthTile('Bot Process', !!health.bot_process, 'Healthy', 'Down'),
+        healthTile('Exchange API', !!health.exchange_api, 'Connected', 'Disconnected'),
+        healthTile('Telegram', !!health.telegram_api, 'Configured', 'Not configured'),
+        healthTile('Storage', !!health.storage, 'OK', 'Problem'),
+      );
+      const setText = (id, value) => {
+        const node = document.getElementById(id);
+        if (node) node.textContent = value == null || value === '' ? '—' : String(value);
+      };
+      setText('health-version', health.version);
+      setText('health-uptime', health.runtime);
+      setText('health-server-time', health.server_time);
+      setText('health-timezone', health.timezone);
+      setText('health-price-update', health.last_price_update);
+      setText('health-last-order', health.last_order);
+
+      const chips = [
+        updateChip('Current version', update.current_version ? 'v' + update.current_version : null),
+        updateChip('Latest release', update.latest_version || null),
+        updateChip('Last check', formatDateTime(update.last_check_at)),
+      ];
+      const stateBadge = el(
+        'span',
+        `badge ${update.update_available ? 'warn' : (update.dismissed ? 'neutral' : 'ok')}`,
+        update.update_available
+          ? 'Update available'
+          : (update.dismissed ? 'Dismissed' : (update.enabled ? 'Up to date' : 'Check disabled')),
+      );
+      updateRow.replaceChildren(...chips, stateBadge);
+    } catch (err) {
+      statusRow.replaceChildren(el('div', 'muted', 'Could not load system health: ' + err.message));
+      updateRow.replaceChildren(el('div', 'muted', 'Could not load update state.'));
+    }
+  }
 
   // Preflight checks
   async function loadPreflightChecks() {
@@ -843,40 +1466,17 @@
     }
   });
 
-  // Health
-  async function loadHealth() {
-    const data = await apiGet('/api/health');
-    document.getElementById('health-bot').replaceChildren(el('span', `badge ${data.bot_process ? 'ok' : 'error'}`, data.bot_process ? 'Healthy' : 'Down'));
-    document.getElementById('health-exchange').replaceChildren(el('span', `badge ${data.exchange_api ? 'ok' : 'warn'}`, data.exchange_api ? 'Connected' : 'Disconnected'));
-    document.getElementById('health-telegram').replaceChildren(el('span', `badge ${data.telegram_api ? 'ok' : 'warn'}`, data.telegram_api ? 'Configured' : 'Not configured'));
-    const details = document.getElementById('health-details');
-    details.innerHTML = '';
-    const grid = document.createElement('div');
-    grid.className = 'grid grid-2';
-    const rows = [
-      ['Version:', data.version],
-      ['Runtime:', data.runtime],
-      ['Server Time:', data.server_time],
-      ['Timezone:', data.timezone],
-      ['Last Price Update:', data.last_price_update],
-      ['Last Order:', data.last_order],
-    ];
-    for (const [label, value] of rows) {
-      const div = document.createElement('div');
-      div.appendChild(el('strong', null, label));
-      div.appendChild(document.createTextNode(' ' + (value ?? '—')));
-      grid.appendChild(div);
-    }
-    details.appendChild(grid);
-  }
-
   (async () => {
     await loadSettings();
-    await loadHealth();
     await loadExchangeStatus();
+    await loadAdvisor();
     await loadAuthStatus();
     await loadPreflightChecks();
-    setInterval(loadHealth, 10000);
+    // Refresh system health only while the System tab is visible.
+    setInterval(() => {
+      const tab = document.getElementById('tab-system');
+      if (tab && tab.style.display !== 'none') loadSystemHealth();
+    }, 10000);
   })();
 </script>
 {% endblock %}

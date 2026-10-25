@@ -56,6 +56,9 @@ def main() -> int:
                 state=app.state,
                 overrides=app.overrides,
                 attempt_store=app.order_executor.attempt_store,
+                advisor=app.advisor,
+                briefing=app.briefing,
+                bot=app,
             )
             print(f"{Colors.GREEN}Web dashboard enabled.{Colors.RESET}")
         except Exception as e:

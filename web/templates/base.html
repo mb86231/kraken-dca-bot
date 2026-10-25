@@ -52,12 +52,14 @@
         <div class="topbar-controls">
           <button class="btn btn-small btn-primary" id="buy-now-btn">Buy Now</button>
           <button class="btn btn-small btn-secondary" id="pause-toggle-btn" data-action="/api/bot/pause">Pause</button>
+          <button class="btn btn-small btn-secondary" id="restart-bot-btn" title="Restart the bot (applies saved settings)">Restart</button>
           <button class="btn btn-small btn-secondary" id="live-trading-toggle-btn" title="Toggle live trading">Live: …</button>
         </div>
         <div class="topbar-badges">
           <span id="status-badge" class="badge">—</span>
           <span id="exchange-status" class="badge">—</span>
           <span id="telegram-status" class="badge">—</span>
+          <span id="advisor-status" class="badge" style="display:none;">Advisor</span>
           <a href="/alerts" id="warning-badge" class="warning-badge" title="No warnings">
             <span>⚠</span>
           </a>

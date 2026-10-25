@@ -59,16 +59,33 @@ def parse_version(tag: str) -> Optional[tuple[int, ...]]:
     return tuple(int(part) for part in cleaned.split("."))
 
 
+def _current_version_tuple(version: str) -> tuple[Optional[tuple[int, ...]], bool]:
+    """Parse the running version; returns (numeric core, is_prerelease).
+
+    A running pre-release like ``1.4.0-beta.1`` counts as the numeric core
+    ``(1, 4, 0)`` flagged as pre-release, so the final release of the same
+    version still counts as an update for beta users.
+    """
+    cleaned = version.strip().lstrip("vV")
+    is_prerelease = "-" in cleaned
+    core = cleaned.split("-", 1)[0]
+    return parse_version(core), is_prerelease
+
+
 def is_newer_version(latest: str, current: str) -> bool:
     """True when ``latest`` is a strictly newer plain version than ``current``."""
     latest_tuple = parse_version(latest)
-    current_tuple = parse_version(current)
+    current_tuple, current_is_prerelease = _current_version_tuple(current)
     if latest_tuple is None or current_tuple is None:
         return False
     length = max(len(latest_tuple), len(current_tuple))
     padded_latest = latest_tuple + (0,) * (length - len(latest_tuple))
     padded_current = current_tuple + (0,) * (length - len(current_tuple))
-    return padded_latest > padded_current
+    if padded_latest != padded_current:
+        return padded_latest > padded_current
+    # Same numeric core: only a plain release is newer than a running
+    # pre-release of that same core (e.g. final v1.4.0 over 1.4.0-beta.1).
+    return current_is_prerelease
 
 
 def fetch_latest_release(

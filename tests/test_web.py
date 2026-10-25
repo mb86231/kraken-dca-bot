@@ -31,6 +31,9 @@ def _set_test_env(temp_dir: Path):
     os.environ.pop("OIDC_ISSUER_URL", None)
     os.environ.pop("OIDC_CLIENT_ID", None)
     os.environ.pop("OIDC_CLIENT_SECRET", None)
+    # Advisor secrets/kill switch must not leak between tests
+    os.environ.pop("AI_ADVISOR_API_KEY", None)
+    os.environ.pop("AI_ADVISOR_ENABLED", None)
 
     config_path = temp_dir / "config.json"
     config_path.write_text(
@@ -113,6 +116,31 @@ def test_dashboard_shows_version_badge(auth_client):
     assert f"v{APP_VERSION}" in response.text
 
 
+def test_dashboard_briefing_card_structure(auth_client):
+    """Redesigned morning briefing: compact header, summary, four KPI
+    tiles and a collapsible details block; the old raw values list with
+    its own scroll area and debug-style labels is gone."""
+    response = auth_client.get("/dashboard")
+    assert response.status_code == 200
+    assert 'id="briefing-card"' in response.text
+    assert 'id="briefing-pair"' in response.text
+    assert 'id="briefing-summary"' in response.text
+    assert 'id="briefing-flags"' in response.text
+    assert 'id="briefing-kpi-price"' in response.text
+    assert 'id="briefing-kpi-invested"' in response.text
+    assert 'id="briefing-kpi-budget"' in response.text
+    assert 'id="briefing-kpi-next"' in response.text
+    assert 'id="briefing-budget-bar"' in response.text
+    assert 'id="briefing-details"' in response.text
+    assert 'id="briefing-detail-rows"' in response.text
+    assert 'class="briefing-kpis"' in response.text
+    # Old layout removed.
+    assert 'id="briefing-text"' not in response.text
+    assert 'id="briefing-values"' not in response.text
+    assert 'id="briefing-data-timestamp"' not in response.text
+    assert "DETERMINISTIC (BOT-COMPUTED)" not in response.text.upper()
+
+
 def test_api_status_requires_auth(client):
     response = client.get("/api/status")
     assert response.status_code == 401
@@ -126,6 +154,48 @@ def test_api_status_authenticated(auth_client):
     assert data["demo_mode"] is True
     assert data["live_trading_enabled"] is False
     assert data["live_trading_env_override"] is True
+
+
+def test_api_status_includes_advisor_block(auth_client):
+    """A1: /api/status exposes advisor state; without a bot-provided
+    advisor the block reports disabled instead of erroring."""
+    response = auth_client.get("/api/status")
+    assert response.status_code == 200
+    advisor = response.json()["advisor"]
+    assert advisor["enabled"] is False
+    assert advisor["state"] == "disabled"
+
+
+def test_base_template_contains_advisor_badge(auth_client):
+    response = auth_client.get("/dashboard")
+    assert response.status_code == 200
+    assert 'id="advisor-status"' in response.text
+
+
+def test_base_template_contains_topbar_restart_button(auth_client):
+    """The single global Restart button lives in the top bar next to
+    Pause and Live trading; settings tabs no longer carry their own."""
+    response = auth_client.get("/dashboard")
+    assert response.status_code == 200
+    assert 'id="restart-bot-btn"' in response.text
+    settings = auth_client.get("/settings")
+    assert settings.status_code == 200
+    # Topbar restart shows on every page (incl. settings), exactly once;
+    # the old per-tab restart buttons are gone.
+    assert settings.text.count('id="restart-bot-btn"') == 1
+    assert 'id="restart-bot"' not in settings.text
+    assert "advisor-restart-bot" not in settings.text
+    assert "reporting-restart-bot" not in settings.text
+
+
+def test_alerts_template_renders_explanation_as_plain_text():
+    """A3: the alerts template must render AI explanations via textContent
+    (never innerHTML) and label them as AI-generated."""
+    from pathlib import Path
+
+    template = Path("web/templates/alerts.html").read_text(encoding="utf-8")
+    assert "AI-generated explanation" in template
+    assert "a.ai_explanation.text" in template
 
 
 def test_api_portfolio_authenticated(auth_client):
@@ -399,6 +469,15 @@ def test_settings_page_renders_subsections(auth_client):
     assert "oidc_issuer_url" in response.text
 
 
+def test_settings_system_tab_has_update_check_save_button(auth_client):
+    """The System tab update-check form has its own save button — before this
+    fix the checkbox could only be saved via the strategy tab's Save All."""
+    response = auth_client.get("/settings")
+    assert response.status_code == 200
+    assert 'id="save-update-check"' in response.text
+    assert response.text.count('id="save-update-check"') == 1
+
+
 def test_alerts_page_renders_acknowledge_all(auth_client):
     response = auth_client.get("/alerts")
     assert response.status_code == 200
@@ -621,3 +700,369 @@ def test_logout_revokes_session(auth_client):
     # Re-plant the pre-logout cookie value: the server-side session is revoked.
     auth_client.cookies.set("dca_session", session)
     assert auth_client.get("/api/status").status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# AI advisor settings in the Web UI (story A8)
+# ---------------------------------------------------------------------------
+
+def test_advisor_settings_roundtrip(auth_client):
+    response = auth_client.put(
+        "/api/settings",
+        json={
+            "advisor": {
+                "enabled": True,
+                "features": {"briefing": True, "explainer": False},
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "briefing_time": "06:30",
+                "daily_request_limit": 25,
+            }
+        },
+    )
+    assert response.status_code == 200
+
+    data = auth_client.get("/api/settings/advisor").json()
+    a = data["advisor"]
+    assert a["enabled"] is True
+    assert a["features"] == {"briefing": True, "explainer": False}
+    assert a["model"] == "gpt-4o-mini"
+    assert a["briefing_time"] == "06:30"
+    assert a["daily_request_limit"] == 25
+    # Untouched numeric fields keep their defaults
+    assert a["timeout_seconds"] == 30.0
+    assert a["max_parallel"] == 2
+    # The provider key never appears in the config block
+    assert "api_key" not in json.dumps(a)
+
+    # Persisted to config.json on disk
+    from web.app import app
+
+    config_path = Path(app.state.config.config_path)
+    on_disk = json.loads(config_path.read_text())["advisor"]
+    assert on_disk["model"] == "gpt-4o-mini"
+    assert on_disk["features"]["briefing"] is True
+
+
+def test_advisor_settings_partial_update_preserves_features(auth_client):
+    auth_client.put(
+        "/api/settings",
+        json={"advisor": {"enabled": False, "features": {"briefing": True, "explainer": True}}},
+    )
+    response = auth_client.put(
+        "/api/settings",
+        json={"advisor": {"enabled": True, "model": "some-model"}},
+    )
+    assert response.status_code == 200
+    a = auth_client.get("/api/settings/advisor").json()["advisor"]
+    assert a["enabled"] is True
+    assert a["features"] == {"briefing": True, "explainer": True}
+
+
+def test_advisor_settings_enable_without_model_rejected(auth_client):
+    response = auth_client.put(
+        "/api/settings",
+        json={"advisor": {"enabled": True, "model": ""}},
+    )
+    assert response.status_code == 400
+    # The invalid save must not corrupt the config on disk
+    from web.app import app
+
+    config_path = Path(app.state.config.config_path)
+    assert json.loads(config_path.read_text()).get("advisor", {}).get("enabled") in (None, False)
+
+
+def test_advisor_settings_unknown_provider_rejected(auth_client):
+    response = auth_client.put("/api/settings", json={"advisor": {"provider": "anthropic"}})
+    assert response.status_code == 422
+
+
+def test_advisor_temperature_roundtrip(auth_client):
+    response = auth_client.put(
+        "/api/settings",
+        json={"advisor": {"temperature": 1.0}},
+    )
+    assert response.status_code == 200
+
+    a = auth_client.get("/api/settings/advisor").json()["advisor"]
+    assert a["temperature"] == 1.0
+
+    from web.app import app
+
+    config_path = Path(app.state.config.config_path)
+    on_disk = json.loads(config_path.read_text())["advisor"]
+    assert on_disk["temperature"] == 1.0
+
+
+def test_advisor_temperature_out_of_range_rejected(auth_client):
+    response = auth_client.put("/api/settings", json={"advisor": {"temperature": 2.5}})
+    assert response.status_code == 422
+
+
+def test_advisor_max_tokens_roundtrip(auth_client):
+    response = auth_client.put(
+        "/api/settings",
+        json={"advisor": {"max_tokens": 4096}},
+    )
+    assert response.status_code == 200
+
+    a = auth_client.get("/api/settings/advisor").json()["advisor"]
+    assert a["max_tokens"] == 4096
+
+    from web.app import app
+
+    config_path = Path(app.state.config.config_path)
+    on_disk = json.loads(config_path.read_text())["advisor"]
+    assert on_disk["max_tokens"] == 4096
+
+
+def test_advisor_max_tokens_out_of_range_rejected(auth_client):
+    response = auth_client.put("/api/settings", json={"advisor": {"max_tokens": 0}})
+    assert response.status_code == 422
+
+
+def test_advisor_briefing_schedule_roundtrip(auth_client):
+    response = auth_client.put(
+        "/api/settings",
+        json={
+            "advisor": {
+                "briefing_frequency": "weekly",
+                "briefing_weekday": 3,
+                "briefing_month_day": 15,
+                "briefing_sections": {
+                    "market": False,
+                    "portfolio": True,
+                    "budget": True,
+                    "bot": True,
+                    "narrative": True,
+                },
+            }
+        },
+    )
+    assert response.status_code == 200
+
+    a = auth_client.get("/api/settings/advisor").json()["advisor"]
+    assert a["briefing_frequency"] == "weekly"
+    assert a["briefing_weekday"] == 3
+    assert a["briefing_month_day"] == 15
+    assert a["briefing_sections"]["market"] is False
+    assert a["briefing_sections"]["narrative"] is True
+
+    from web.app import app
+
+    config_path = Path(app.state.config.config_path)
+    on_disk = json.loads(config_path.read_text())["advisor"]
+    assert on_disk["briefing_frequency"] == "weekly"
+    assert on_disk["briefing_sections"]["narrative"] is True
+
+
+def test_advisor_briefing_frequency_invalid_rejected(auth_client):
+    response = auth_client.put(
+        "/api/settings", json={"advisor": {"briefing_frequency": "hourly"}}
+    )
+    assert response.status_code == 422
+
+
+def test_advisor_settings_page_renders_tab(auth_client):
+    response = auth_client.get("/settings")
+    assert response.status_code == 200
+    assert 'data-tab="advisor"' in response.text
+    assert 'id="tab-advisor"' in response.text
+    assert "advisor_api_key" in response.text
+    # Grouped cards, runtime status, unsaved indicator, collapsible
+    # advanced section, restart apart, full-width layout (no narrow column).
+    assert "settings-narrow" not in response.text
+    assert "advisor-runtime-status" in response.text
+    assert "advisor-unsaved" in response.text
+    assert "advisor-restart-hint" in response.text
+    assert 'id="advisor-advanced"' in response.text
+    assert "Provider &amp; Connection" in response.text
+    assert "Alert Explanations" in response.text
+    # Restart moved to the top bar; no per-tab restart buttons remain.
+    assert "advisor-restart-bot" not in response.text
+    assert 'id="restart-bot"' not in response.text
+    # The duplicate in-tab advisor-status id is gone; only the base
+    # template's nav badge remains.
+    assert response.text.count('id="advisor-status"') == 1
+
+
+def test_reporting_settings_page_renders_tab(auth_client):
+    """The morning briefing lives in its own Reporting tab, separate from
+    the AI tab; both share the advisor settings save path."""
+    response = auth_client.get("/settings")
+    assert response.status_code == 200
+    assert 'data-tab="reporting"' in response.text
+    assert 'id="tab-reporting"' in response.text
+    # Nav label for the advisor tab is the short "AI".
+    assert 'data-tab="advisor">AI</button>' in response.text
+    # Briefing controls moved to the Reporting tab.
+    assert "advisor_feature_briefing" in response.text
+    assert "advisor_briefing_frequency" in response.text
+    assert "advisor_section_narrative" in response.text
+    assert "test-advisor" in response.text
+    # Reporting has its own save button and unsaved/restart indicators.
+    assert "save-reporting" in response.text
+    assert "reporting-unsaved" in response.text
+    assert "reporting-restart-hint" in response.text
+    assert "reporting-restart-bot" not in response.text
+    # Narrative customization and news controls.
+    assert "advisor_focus_market" in response.text
+    assert "advisor_focus_news" in response.text
+    assert "advisor_custom_prompt" in response.text
+    assert "advisor_narrative_max_words" in response.text
+    assert "advisor_news_feeds" in response.text
+    assert "advisor_section_news_general" in response.text
+    assert "advisor_section_news_pair" in response.text
+
+
+def test_advisor_narrative_customization_roundtrip(auth_client):
+    response = auth_client.put(
+        "/api/settings",
+        json={
+            "advisor": {
+                "narrative_focus": ["market", "news"],
+                "custom_prompt": "Summarize {pair} in two sentences.",
+                "narrative_max_words": 150,
+                "news_feeds": ["https://example.test/rss"],
+                "briefing_sections": {"news_general": True, "news_pair": True},
+            }
+        },
+    )
+    assert response.status_code == 200
+    a = auth_client.get("/api/settings/advisor").json()["advisor"]
+    assert a["narrative_focus"] == ["market", "news"]
+    assert a["custom_prompt"] == "Summarize {pair} in two sentences."
+    assert a["narrative_max_words"] == 150
+    assert a["news_feeds"] == ["https://example.test/rss"]
+    assert a["briefing_sections"]["news_general"] is True
+    assert a["briefing_sections"]["news_pair"] is True
+
+
+def test_advisor_narrative_focus_unknown_rejected(auth_client):
+    response = auth_client.put(
+        "/api/settings", json={"advisor": {"narrative_focus": ["bogus"]}}
+    )
+    assert response.status_code == 422
+
+
+def test_advisor_news_feeds_invalid_rejected(auth_client):
+    response = auth_client.put(
+        "/api/settings", json={"advisor": {"news_feeds": ["ftp://example.test"]}}
+    )
+    assert response.status_code == 422
+    response = auth_client.put(
+        "/api/settings",
+        json={"advisor": {"news_feeds": [f"https://f{i}.test" for i in range(6)]}},
+    )
+    assert response.status_code == 422
+
+
+def test_advisor_key_save_status_and_clear(auth_client):
+    os.environ.pop("AI_ADVISOR_API_KEY", None)
+    response = auth_client.put(
+        "/api/settings/advisor/key",
+        json={"api_key": "sk-test-advisor-key-123456"},
+    )
+    assert response.status_code == 200
+    key_field = response.json()["key"]["fields"]["api_key"]
+    assert key_field["set"] is True
+    assert key_field["source"] == "secrets_file"
+    # The raw key must never leak into API responses
+    assert "sk-test-advisor-key" not in response.text
+
+    secrets_path = Path(os.environ["SECRETS_PATH"])
+    saved = json.loads(secrets_path.read_text())
+    assert saved["ai_advisor_api_key"] == "sk-test-advisor-key-123456"
+
+    status = auth_client.get("/api/settings/advisor")
+    assert status.status_code == 200
+    assert "sk-test-advisor-key" not in status.text
+    assert status.json()["key"]["fields"]["api_key"]["set"] is True
+
+    # The audit history must not contain the raw key either
+    history = auth_client.get("/api/settings/history")
+    assert history.status_code == 200
+    assert "sk-test-advisor-key" not in history.text
+
+    response = auth_client.post("/api/settings/advisor/key/clear")
+    assert response.status_code == 200
+    saved = json.loads(secrets_path.read_text())
+    assert "ai_advisor_api_key" not in saved
+
+
+def test_advisor_key_env_takes_precedence(auth_client):
+    os.environ["AI_ADVISOR_API_KEY"] = "sk-env-advisor-key-12345678"
+    try:
+        auth_client.put(
+            "/api/settings/advisor/key",
+            json={"api_key": "sk-stored-advisor-key-123456"},
+        )
+        data = auth_client.get("/api/settings/advisor").json()
+        field = data["key"]["fields"]["api_key"]
+        assert field["source"] == "environment"
+        assert "sk-stored-advisor-key" not in json.dumps(data)
+    finally:
+        os.environ.pop("AI_ADVISOR_API_KEY", None)
+
+
+def test_advisor_key_rejected_when_too_short(auth_client):
+    response = auth_client.put("/api/settings/advisor/key", json={"api_key": "short"})
+    assert response.status_code == 422
+
+
+def test_advisor_test_endpoint_without_bot(auth_client):
+    """A9: with no briefing service on app.state the endpoint explains the
+    situation instead of erroring."""
+    response = auth_client.post("/api/advisor/test")
+    assert response.status_code == 503
+
+
+def test_advisor_test_endpoint_returns_result(auth_client):
+    """A9: the endpoint relays the TestBriefingResult to the dashboard."""
+    from web.app import app
+
+    from bot.advisor.briefing import TestBriefingResult
+
+    class _StubBriefing:
+        def send_test_briefing(self) -> TestBriefingResult:
+            return TestBriefingResult(
+                ok=True,
+                source="ai",
+                text="hello from the test",
+                telegram_sent=True,
+                latency_ms=12.5,
+            )
+
+    app.state.briefing = _StubBriefing()
+    try:
+        response = auth_client.post("/api/advisor/test")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert data["telegram_sent"] is True
+        assert data["text"] == "hello from the test"
+        assert data["latency_ms"] == 12.5
+        assert "message" in data
+    finally:
+        del app.state.briefing
+
+
+def test_advisor_test_endpoint_relays_failure(auth_client):
+    """A9: a failed test still returns HTTP 200; ok/reason carry the outcome."""
+    from web.app import app
+
+    from bot.advisor.briefing import TestBriefingResult
+
+    class _StubBriefing:
+        def send_test_briefing(self) -> TestBriefingResult:
+            return TestBriefingResult(ok=False, reason="briefing feature is not enabled")
+
+    app.state.briefing = _StubBriefing()
+    try:
+        response = auth_client.post("/api/advisor/test")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is False
+        assert "not enabled" in data["reason"]
+    finally:
+        del app.state.briefing

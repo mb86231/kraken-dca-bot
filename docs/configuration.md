@@ -267,6 +267,111 @@ Copy `.env.example` to `.env` and fill in real values. `.env` is in
 | `TELEGRAM_COMMANDS_ENABLED` | `true` / `false` | Master switch for the interactive Telegram command bot. |
 | `SESSIONS_PATH` | `data/sessions.json` | Revocable server-side session store (next to the secrets file by default). |
 
+### AI advisor (beta)
+
+The optional AI advisor layer (planned beta track) is **off by default**
+and strictly advisory: it never places orders, never receives exchange
+credentials, and its failure never changes the base strategy. All advisor
+behaviour degrades to "no advice"; outages are visible in the dashboard
+and the logs.
+
+`config.json` section (defaults shown):
+
+```json
+"advisor": {
+  "enabled": false,
+  "features": {"briefing": false, "explainer": false},
+  "provider": "openai",
+  "base_url": "",
+  "model": "",
+  "timeout_seconds": 30.0,
+  "max_retries": 2,
+  "max_parallel": 2,
+  "daily_request_limit": 50,
+  "daily_token_limit": 100000,
+  "daily_cost_limit": 1.0,
+  "briefing_time": "07:00",
+  "briefing_frequency": "daily",
+  "briefing_weekday": 0,
+  "briefing_month_day": 1,
+  "briefing_sections": {
+    "market": true,
+    "portfolio": true,
+    "budget": true,
+    "bot": true,
+    "news_general": false,
+    "news_pair": false,
+    "narrative": false
+  },
+  "narrative_focus": ["market", "portfolio", "plan"],
+  "custom_prompt": "",
+  "narrative_max_words": 120,
+  "news_feeds": [
+    "https://www.coindesk.com/arc/outboundfeeds/rss/",
+    "https://cointelegraph.com/rss"
+  ],
+  "temperature": 0.2,
+  "max_tokens": 1024
+}
+```
+
+- `provider`: `openai` (any OpenAI-compatible endpoint, e.g. OpenAI or
+  Kimi Open Platform) or `ollama` (local).
+- `features`: per-feature switches; each advisory feature ships disabled.
+- **Briefing schedule**: `briefing_time` (`HH:MM`, Europe/Zurich,
+  DST-aware) combined with `briefing_frequency` (`daily`, `weekly` or
+  `monthly`). Weekly uses `briefing_weekday` (0=Monday … 6=Sunday);
+  monthly uses `briefing_month_day` (1–28, capped so the slot exists in
+  every month).
+- **Briefing content**: `briefing_sections` selects the message blocks —
+  `market` (price), `portfolio` (invested, holdings, value now, P/L in
+  amount and percent), `budget` (monthly budget, next cycle, estimated
+  buys left), `bot` (status, live trading) and the two news blocks
+  (`news_general`, `news_pair`). All are bot-computed and consume no AI
+  tokens: the bot fetches the configured RSS/Atom `news_feeds` itself
+  (short cache, failing feeds are skipped, never blocking) and filters
+  pair news by the base asset (XBT→Bitcoin, ETH→Ethereum, …). The AI
+  provider never goes to the internet. The optional `narrative` block
+  adds an AI-written paragraph; it ships disabled so the default briefing
+  costs nothing. When enabled, the bot still supplies every number — the
+  AI only writes the prose, and an unavailable provider never blocks the
+  message. Briefings are archived on the dashboard.
+- **Narrative customization**: `narrative_focus` (`market`, `portfolio`,
+  `plan`, `news`) tells the AI which aspects to cover; `news` only takes
+  effect when headlines were fetched. `narrative_max_words` bounds the
+  length (40–400, default 120). `custom_prompt` replaces the default task
+  text — use placeholders `{pair} {price} {invested} {holdings}
+  {value_now} {pnl_pct} {budget_spent} {budget_limit} {next_run} {buys}
+  {bot_status}`; unknown placeholders stay untouched, the safety rules
+  (no invented values, no financial advice) always apply. Empty =
+  default prompt.
+- `temperature`: sampling temperature (0–2, default 0.2). Some reasoning
+  models only accept `1`; if the provider rejects the request with an
+  "invalid temperature" error, set this to `1`.
+- `max_tokens`: response token budget (default 1024). Reasoning models
+  also count internal thinking towards this limit; if the provider
+  returns empty content (`finish_reason=length`), raise this (e.g. 4096).
+- **Send Test Briefing** (Settings → Reporting): sends the real briefing
+  message once — snapshot → (optional AI narrative) → Telegram — without
+  consuming the scheduled slot or writing to the briefing history. With
+  the narrative section enabled, provider failures are reported as-is
+  (never masked); with it disabled, the deterministic message is tested
+  and the provider is never called. Provider, model, temperature and key
+  changes only take effect on startup — use the **Restart** button in the
+  top bar after saving.
+- The provider API key is **never** written to `config.json` — set it in the
+  dashboard (Settings → AI Advisor → Provider API Key), which stores it in
+  the secrets store (`data/secrets.json`, 0600), or via the environment.
+
+| Variable | Typical value | Purpose |
+|----------|---------------|---------|
+| `AI_ADVISOR_API_KEY` | `<provider key>` | Provider API key (OpenAI-compatible providers only; Ollama needs none). Environment takes precedence over the dashboard-stored key. |
+| `AI_ADVISOR_ENABLED` | `false` | Kill switch: any of `false`/`0`/`off` forces the advisor off regardless of `config.json` or dashboard settings. |
+
+Every interaction is audit-logged to `logs/advisor.json` (provider/model,
+prompt and schema versions, status, latency, tokens/cost, error category,
+and a prompt hash — never the prompt text or any secret).
+
 ### Telegram command bot
 
 Besides one-way notifications, the bot can receive commands via long polling
@@ -326,7 +431,8 @@ production configuration, but it is no longer required before trading. See
 - Environment variables are loaded by the container runtime (`env_file` in
   `compose.yaml`) and by `os.environ` at runtime.
 - The dashboard can edit `config.json` and persist it atomically. Changes that
-  affect the trading pair or API credentials still require a container restart.
+  affect the trading pair or API credentials still require a container restart
+  — use the **Restart** button in the top bar of the dashboard.
 
 ---
 

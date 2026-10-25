@@ -232,6 +232,33 @@ async function loadStatus() {
       telegramStatus.className = 'badge ' + (telegramOk ? 'ok' : 'warn');
     }
 
+    // AI advisor (story A1): hidden entirely when the advisor is disabled;
+    // when enabled, shows "Advisor" (green dot) or "Advisor unavailable".
+    const advisorStatus = document.getElementById('advisor-status');
+    if (advisorStatus) {
+      const advisor = data.advisor;
+      if (!advisor || !advisor.enabled) {
+        advisorStatus.style.display = 'none';
+      } else {
+        advisorStatus.style.display = '';
+        const available = advisor.available === true;
+        advisorStatus.className = 'badge ' + (available ? 'ok' : 'warn');
+        advisorStatus.replaceChildren();
+        if (available) {
+          const dot = document.createElement('span');
+          dot.className = 'pulse-dot';
+          advisorStatus.appendChild(dot);
+          advisorStatus.appendChild(document.createTextNode(' Advisor'));
+        } else {
+          advisorStatus.textContent = 'Advisor unavailable';
+        }
+        advisorStatus.title = available
+          ? `AI advisor operational (${advisor.provider || 'provider'}${advisor.model ? ' / ' + advisor.model : ''})`
+          : 'AI advisor is enabled but not available: ' + (advisor.last_error || advisor.reason || 'unknown error') +
+            ' — the base strategy keeps running unchanged';
+      }
+    }
+
     const warningBadge = document.getElementById('warning-badge');
     if (warningBadge) {
       const count = data.alert_count !== undefined ? data.alert_count : (data.recent_warnings ? data.recent_warnings.length : 0);
@@ -348,6 +375,24 @@ document.addEventListener('click', async (e) => {
   } catch (err) {
     showToast(err.message || 'Action failed', 'error');
     loadStatus();
+  }
+});
+
+// Restart bot (topbar): single global restart for all tabs — the container
+// restarts and applies any saved settings on startup.
+document.addEventListener('click', async (e) => {
+  const button = e.target.closest('#restart-bot-btn');
+  if (!button) return;
+  e.preventDefault();
+  if (!(await uiConfirm('Restart the bot? The container will restart and apply any saved settings.', { title: 'Restart bot', confirmText: 'Restart' }))) return;
+  button.disabled = true;
+  try {
+    const res = await apiPost('/api/bot/restart');
+    showToast(res.message || 'Restarting…', 'success');
+  } catch (err) {
+    showToast(err.message || 'Action failed', 'error');
+  } finally {
+    button.disabled = false;
   }
 });
 

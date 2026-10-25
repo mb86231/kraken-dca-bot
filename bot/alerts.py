@@ -13,6 +13,17 @@ from bot.utils import atomic_write_json, safe_load_json
 
 ALERTS_PATH = Path("data/alerts.json")
 
+# Optional AI explainer hook (story A3). Set via set_explainer_hook(); the
+# callable receives the newly created alert dict and must be fire-and-
+# forget — create_alert never blocks on it and never propagates its errors.
+_explainer_hook: Any = None
+
+
+def set_explainer_hook(hook: Any) -> None:
+    """Register (or clear, with None) the alert explainer callback."""
+    global _explainer_hook
+    _explainer_hook = hook
+
 
 def load_alerts() -> list[dict[str, Any]]:
     data = safe_load_json(ALERTS_PATH)
@@ -36,6 +47,12 @@ def create_alert(message: str, severity: str = "warning", source: str = "bot") -
     }
     alerts.append(alert)
     save_alerts(alerts)
+    if _explainer_hook is not None:
+        try:
+            _explainer_hook(alert)
+        except Exception:
+            # The explainer is advisory; alert delivery must never fail.
+            pass
     return alert
 
 

@@ -27,6 +27,31 @@ DEFAULT_DYNAMIC_TIERS: List[dict[str, Any]] = [
     {"threshold_percent": -20.0, "amount": 0.002, "enabled": True},
 ]
 
+# Content blocks of the deterministic briefing message (AI advisor, story
+# A2/A9). Keep in sync with bot.advisor.briefing.DEFAULT_BRIEFING_SECTIONS;
+# the narrative block and the news blocks are opt-in so the default briefing
+# consumes no tokens at all.
+DEFAULT_BRIEFING_SECTIONS: dict[str, bool] = {
+    "market": True,
+    "portfolio": True,
+    "budget": True,
+    "bot": True,
+    "narrative": False,
+    "news_general": False,
+    "news_pair": False,
+}
+
+# Narrative focus topics. "news" only takes effect when news headlines were
+# fetched successfully; the bot fetches them, the AI only narrates.
+NARRATIVE_FOCUS_OPTIONS = ("market", "portfolio", "plan", "news")
+DEFAULT_NARRATIVE_FOCUS = ("market", "portfolio", "plan")
+CUSTOM_PROMPT_MAX_CHARS = 2000
+NEWS_MAX_FEEDS = 5
+DEFAULT_NEWS_FEEDS = (
+    "https://www.coindesk.com/arc/outboundfeeds/rss/",
+    "https://cointelegraph.com/rss",
+)
+
 
 @dataclass
 class DynamicTier:
@@ -72,6 +97,34 @@ class Config:
         self.dynamic_dca_cooldown_hours: float = 24.0
         self.dynamic_dca_tiers: List[DynamicTier] = []
         self.preflight_disabled_checks: List[str] = []
+        # AI advisor (story A1). Everything is off by default; the advisor
+        # is advisory-only and never on the buy path. The API key is managed
+        # like all dashboard secrets: AI_ADVISOR_API_KEY env var first,
+        # secrets store (data/secrets.json) as fallback — never in this file.
+        self.advisor_enabled: bool = False
+        self.advisor_features: dict[str, bool] = {"briefing": False, "explainer": False}
+        self.advisor_provider: str = "openai"
+        self.advisor_base_url: str = ""
+        self.advisor_model: str = ""
+        self.advisor_timeout_seconds: float = 30.0
+        self.advisor_max_retries: int = 2
+        self.advisor_max_parallel: int = 2
+        self.advisor_daily_request_limit: int = 50
+        self.advisor_daily_token_limit: int = 100_000
+        self.advisor_daily_cost_limit: float = 1.0
+        self.advisor_briefing_time: str = "07:00"
+        self.advisor_temperature: float = 0.2
+        self.advisor_max_tokens: int = 1024
+        self.advisor_briefing_frequency: str = "daily"
+        self.advisor_briefing_weekday: int = 0
+        self.advisor_briefing_month_day: int = 1
+        self.advisor_briefing_sections: dict[str, bool] = dict(DEFAULT_BRIEFING_SECTIONS)
+        # Narrative customization and news sources (all optional; safe
+        # defaults keep the previous behaviour).
+        self.advisor_narrative_focus: tuple[str, ...] = DEFAULT_NARRATIVE_FOCUS
+        self.advisor_custom_prompt: str = ""
+        self.advisor_narrative_max_words: int = 120
+        self.advisor_news_feeds: tuple[str, ...] = DEFAULT_NEWS_FEEDS
         self.loaded_at: Optional[datetime] = None
         self.configured: bool = False
         self._load()
@@ -145,6 +198,55 @@ class Config:
             if isinstance(name, str) and name
         ]
 
+        advisor = config.get("advisor", {})
+        self.advisor_enabled = bool(advisor.get("enabled", False))
+        features_raw = advisor.get("features", {})
+        if isinstance(features_raw, dict):
+            self.advisor_features = {
+                name: bool(features_raw.get(name, False))
+                for name in ("briefing", "explainer")
+            }
+        self.advisor_provider = str(advisor.get("provider", "openai")).lower()
+        self.advisor_base_url = str(advisor.get("base_url", ""))
+        self.advisor_model = str(advisor.get("model", ""))
+        self.advisor_timeout_seconds = float(advisor.get("timeout_seconds", 30.0))
+        self.advisor_max_retries = int(advisor.get("max_retries", 2))
+        self.advisor_max_parallel = int(advisor.get("max_parallel", 2))
+        self.advisor_daily_request_limit = int(advisor.get("daily_request_limit", 50))
+        self.advisor_daily_token_limit = int(advisor.get("daily_token_limit", 100_000))
+        self.advisor_daily_cost_limit = float(advisor.get("daily_cost_limit", 1.0))
+        self.advisor_briefing_time = str(advisor.get("briefing_time", "07:00"))
+        self.advisor_temperature = float(advisor.get("temperature", 0.2))
+        self.advisor_max_tokens = int(advisor.get("max_tokens", 1024))
+        self.advisor_briefing_frequency = str(
+            advisor.get("briefing_frequency", "daily")
+        ).lower()
+        self.advisor_briefing_weekday = int(advisor.get("briefing_weekday", 0))
+        self.advisor_briefing_month_day = int(advisor.get("briefing_month_day", 1))
+        sections_raw = advisor.get("briefing_sections", {})
+        self.advisor_briefing_sections = dict(DEFAULT_BRIEFING_SECTIONS)
+        if isinstance(sections_raw, dict):
+            for key, value in sections_raw.items():
+                if key in DEFAULT_BRIEFING_SECTIONS:
+                    self.advisor_briefing_sections[key] = bool(value)
+        focus_raw = advisor.get("narrative_focus", list(DEFAULT_NARRATIVE_FOCUS))
+        if isinstance(focus_raw, list):
+            focus = tuple(str(f) for f in focus_raw if str(f) in NARRATIVE_FOCUS_OPTIONS)
+            self.advisor_narrative_focus = focus or DEFAULT_NARRATIVE_FOCUS
+        self.advisor_custom_prompt = str(advisor.get("custom_prompt", ""))[
+            :CUSTOM_PROMPT_MAX_CHARS
+        ]
+        self.advisor_narrative_max_words = int(advisor.get("narrative_max_words", 120))
+        feeds_raw = advisor.get("news_feeds", list(DEFAULT_NEWS_FEEDS))
+        if isinstance(feeds_raw, list):
+            feeds = [
+                str(u).strip()
+                for u in feeds_raw
+                if str(u).strip().startswith(("http://", "https://"))
+            ][:NEWS_MAX_FEEDS]
+            if feeds:
+                self.advisor_news_feeds = tuple(feeds)
+
         # The bot is "configured" once exchange credentials are known. All
         # other fields are validated strictly regardless (the first-boot
         # template ships valid defaults), but a missing key/secret must not
@@ -188,6 +290,8 @@ class Config:
             raise Exception("dip_buy_cooldown_hours must be 0 or greater")
         if self.dynamic_dca_reference not in ("last_buy", "avg_buy"):
             raise Exception("dynamic_dca.reference must be 'last_buy' or 'avg_buy'")
+        if not (40 <= self.advisor_narrative_max_words <= 400):
+            raise Exception("advisor.narrative_max_words must be between 40 and 400")
         if self.dynamic_dca_cooldown_hours < 0:
             raise Exception("dynamic_dca.cooldown_hours must be 0 or greater")
         if self.dynamic_dca_enabled:
@@ -202,6 +306,42 @@ class Config:
                 raise Exception(
                     "dynamic_dca must have at least one enabled tier with amount > 0"
                 )
+        if self.advisor_provider not in ("openai", "ollama"):
+            raise Exception("advisor.provider must be 'openai' or 'ollama'")
+        if self.advisor_enabled:
+            if not self.advisor_model:
+                raise Exception("advisor.model is required when the advisor is enabled")
+            if self.advisor_timeout_seconds <= 0:
+                raise Exception("advisor.timeout_seconds must be greater than 0")
+            if self.advisor_max_retries < 0:
+                raise Exception("advisor.max_retries must be 0 or greater")
+            if self.advisor_max_parallel < 1:
+                raise Exception("advisor.max_parallel must be at least 1")
+            if self.advisor_daily_request_limit < 1:
+                raise Exception("advisor.daily_request_limit must be at least 1")
+            if self.advisor_daily_token_limit < 1:
+                raise Exception("advisor.daily_token_limit must be at least 1")
+            if self.advisor_daily_cost_limit <= 0:
+                raise Exception("advisor.daily_cost_limit must be greater than 0")
+            try:
+                hour_str, minute_str = self.advisor_briefing_time.strip().split(":", 1)
+                hour, minute = int(hour_str), int(minute_str)
+                if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                    raise ValueError
+            except (ValueError, AttributeError):
+                raise Exception('advisor.briefing_time must look like "07:00"')
+            if not (0.0 <= self.advisor_temperature <= 2.0):
+                raise Exception("advisor.temperature must be between 0 and 2")
+            if self.advisor_max_tokens < 1:
+                raise Exception("advisor.max_tokens must be at least 1")
+            if self.advisor_briefing_frequency not in ("daily", "weekly", "monthly"):
+                raise Exception(
+                    "advisor.briefing_frequency must be 'daily', 'weekly' or 'monthly'"
+                )
+            if not (0 <= self.advisor_briefing_weekday <= 6):
+                raise Exception("advisor.briefing_weekday must be between 0 (Mon) and 6 (Sun)")
+            if not (1 <= self.advisor_briefing_month_day <= 28):
+                raise Exception("advisor.briefing_month_day must be between 1 and 28")
 
     def _create_template(self):
         """Create template configuration file"""
@@ -221,6 +361,30 @@ class Config:
                 "reference": "last_buy",
                 "cooldown_hours": 24.0,
                 "tiers": DEFAULT_DYNAMIC_TIERS,
+            },
+            "advisor": {
+                "enabled": False,
+                "features": {"briefing": False, "explainer": False},
+                "provider": "openai",
+                "base_url": "",
+                "model": "",
+                "timeout_seconds": 30.0,
+                "max_retries": 2,
+                "max_parallel": 2,
+                "daily_request_limit": 50,
+                "daily_token_limit": 100000,
+                "daily_cost_limit": 1.0,
+                "briefing_time": "07:00",
+                "temperature": 0.2,
+                "max_tokens": 1024,
+                "briefing_frequency": "daily",
+                "briefing_weekday": 0,
+                "briefing_month_day": 1,
+                "briefing_sections": dict(DEFAULT_BRIEFING_SECTIONS),
+                "narrative_focus": list(DEFAULT_NARRATIVE_FOCUS),
+                "custom_prompt": "",
+                "narrative_max_words": 120,
+                "news_feeds": list(DEFAULT_NEWS_FEEDS),
             },
         }
         with open(self.config_path, "w", encoding="utf-8") as f:
@@ -253,6 +417,30 @@ class Config:
                 "tiers": [tier.to_dict() for tier in self.dynamic_dca_tiers],
             },
             "preflight_disabled_checks": list(self.preflight_disabled_checks),
+            "advisor": {
+                "enabled": self.advisor_enabled,
+                "features": dict(self.advisor_features),
+                "provider": self.advisor_provider,
+                "base_url": self.advisor_base_url,
+                "model": self.advisor_model,
+                "timeout_seconds": self.advisor_timeout_seconds,
+                "max_retries": self.advisor_max_retries,
+                "max_parallel": self.advisor_max_parallel,
+                "daily_request_limit": self.advisor_daily_request_limit,
+                "daily_token_limit": self.advisor_daily_token_limit,
+                "daily_cost_limit": self.advisor_daily_cost_limit,
+                "briefing_time": self.advisor_briefing_time,
+                "temperature": self.advisor_temperature,
+                "max_tokens": self.advisor_max_tokens,
+                "briefing_frequency": self.advisor_briefing_frequency,
+                "briefing_weekday": self.advisor_briefing_weekday,
+                "briefing_month_day": self.advisor_briefing_month_day,
+                "briefing_sections": dict(self.advisor_briefing_sections),
+                "narrative_focus": list(self.advisor_narrative_focus),
+                "custom_prompt": self.advisor_custom_prompt,
+                "narrative_max_words": self.advisor_narrative_max_words,
+                "news_feeds": list(self.advisor_news_feeds),
+            },
         }
 
     def reload(self) -> None:

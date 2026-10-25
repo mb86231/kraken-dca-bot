@@ -44,7 +44,15 @@ from bot.utils import (
 )
 from web.auth import auth_manager, csrf_protect, require_auth
 from web.brute_force import check_login_allowed
-from web.deps import get_attempt_store, get_config, get_overrides, get_state, get_store
+from web.deps import (
+    get_advisor,
+    get_attempt_store,
+    get_briefing,
+    get_config,
+    get_overrides,
+    get_state,
+    get_store,
+)
 from web.oidc import oidc_provider
 from web.rate_limit import (
     api_rate_limit,
@@ -53,6 +61,7 @@ from web.rate_limit import (
     settings_rate_limit,
 )
 from web.schemas import (
+    AdvisorKeyUpdate,
     ExchangeCredentialsUpdate,
     LoginPayload,
     OIDCSettingsUpdate,
@@ -85,6 +94,8 @@ class _BalanceCache:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._client: KrakenAPI | DemoKrakenAPI | None = None
+        self._client_key: str | None = None
+        self._client_secret: str | None = None
         self._timestamp = 0.0
         self._available_fiat: float | None = None
         self._fiat_currency = ""
@@ -114,8 +125,17 @@ class _BalanceCache:
                         fiat_currency: 10000.0,
                     }
                 else:
-                    if self._client is None:
-                        self._client = KrakenAPI(config.api_key, config.api_secret)
+                    # Rebuild the client when the credentials changed at
+                    # runtime (settings save) so the cache never serves a
+                    # stale key.
+                    key, secret = config.api_key, config.api_secret
+                    if (
+                        self._client is None
+                        or self._client_key != key
+                        or self._client_secret != secret
+                    ):
+                        self._client = KrakenAPI(key, secret)
+                        self._client_key, self._client_secret = key, secret
                     balance = self._client.get_balance()
                 available = balance.get(f"Z{fiat_currency}", balance.get(fiat_currency, 0.0))
                 self._available_fiat = float(available)
@@ -147,6 +167,73 @@ def _deep_merge(existing: Any, update: Any) -> Any:
             merged[key] = _deep_merge(merged.get(key), value)
         return merged
     return update
+
+
+def announce_release(tag: str, url: str) -> None:
+    """Announce a new GitHub release via the alert store and Telegram."""
+    message = (
+        f"Update available: {tag} (running {APP_VERSION})."
+        + (f" Release notes: {url}" if url else "")
+    )
+    try:
+        from bot.alerts import create_alert
+
+        create_alert(message, severity="info", source="update")
+    except Exception:
+        logger.exception("update alert creation failed")
+    try:
+        from bot.notifier import Notifier
+
+        Notifier().send(message)
+    except Exception:
+        logger.exception("update telegram notification failed")
+
+
+def _hot_reload_bot(
+    request: Request,
+    *,
+    reload_api: bool = False,
+    reconfigure_advisor: bool = False,
+) -> None:
+    """Apply runtime config changes to the live bot, if it is attached.
+
+    Never raises: hot reload is best-effort and must not break a settings
+    save that already persisted a valid config.
+    """
+    bot = getattr(request.app.state, "bot", None)
+    if bot is None:
+        return
+    if reload_api and hasattr(bot, "reload_api_client"):
+        try:
+            bot.reload_api_client()
+        except Exception:
+            logger.exception("hot reload of the API client failed")
+    if reconfigure_advisor and hasattr(bot, "reconfigure_advisor"):
+        try:
+            bot.reconfigure_advisor()
+        except Exception:
+            logger.exception("hot reload of the advisor failed")
+
+
+def _rebuild_update_checker(request: Request, config: Config) -> None:
+    """Restart the update checker from the current config.
+
+    Called when update_check_enabled / update_check_interval_hours change at
+    runtime so the new values take effect without a restart.
+    """
+    old = getattr(request.app.state, "update_checker", None)
+    if old is not None:
+        try:
+            old.stop()
+        except Exception:
+            logger.exception("stopping the previous update checker failed")
+    checker = UpdateChecker(
+        enabled=bool(getattr(config, "update_check_enabled", True)),
+        interval_hours=int(getattr(config, "update_check_interval_hours", 24)),
+        on_new_release=announce_release,
+    )
+    request.app.state.update_checker = checker
+    checker.start_background()
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +358,7 @@ async def api_preflight_run(
 
 @router.get("/status")
 def api_status(
+    request: Request,
     config: Config = Depends(get_config),
     store: TransactionStore = Depends(get_store),
     state: BotState = Depends(get_state),
@@ -279,6 +367,12 @@ def api_status(
     _rate_limit=Depends(api_rate_limit),
 ):
     portfolio = _portfolio_data(store, state, config)
+    advisor = get_advisor(request)
+    advisor_status = (
+        advisor.status()
+        if advisor is not None
+        else {"enabled": False, "available": False, "state": "disabled", "reason": "not initialized"}
+    )
     return {
         "status": "paused" if overrides.paused else state.status,
         "paused": overrides.paused,
@@ -318,7 +412,57 @@ def api_status(
         "portfolio": portfolio,
         "runtime_started_at": format_datetime(state.runtime_started_at),
         "version": APP_VERSION,
+        "advisor": advisor_status,
     }
+
+
+@router.get("/advisor/briefings")
+def api_advisor_briefings(
+    request: Request,
+    username: str = Depends(require_auth),
+    _rate_limit=Depends(api_rate_limit),
+):
+    """Archived morning briefings, newest first (story A2).
+
+    Values in each entry are bot-computed; ``text`` is either AI-generated
+    (source "ai") or the deterministic template (source "template").
+    """
+    briefing = get_briefing(request)
+    history = briefing.load_history() if briefing is not None else []
+    return {"briefings": list(reversed(history))}
+
+
+@router.post("/advisor/test")
+@csrf_protect
+async def api_advisor_test(
+    request: Request,
+    username: str = Depends(require_auth),
+    _rate_limit=Depends(settings_rate_limit),
+):
+    """Send a test briefing through the whole advisor chain (story A9).
+
+    Snapshot -> AI narrative -> Telegram. Does not consume the daily slot
+    and does not write to the briefing history, so repeated tests never
+    suppress the scheduled briefing. The result always returns HTTP 200;
+    ``ok``/``telegram_sent``/``reason`` carry the outcome.
+    """
+    briefing = get_briefing(request)
+    if briefing is None:
+        raise HTTPException(status_code=503, detail="Advisor is not initialized (bot not running).")
+    result = briefing.send_test_briefing()
+    _audit_log(
+        "advisor_test_briefing",
+        {"ok": result.ok, "telegram_sent": result.telegram_sent},
+        request,
+    )
+    message = (
+        "Test briefing sent to Telegram."
+        if result.ok and result.telegram_sent
+        else (result.reason or "Test briefing generated; see details.")
+        if result.ok
+        else (result.reason or "Test failed.")
+    )
+    return {"message": message, **result.to_dict()}
 
 
 @router.get("/balance")
@@ -916,7 +1060,7 @@ async def api_update_settings(
 
     update_dict = update.model_dump(exclude_unset=True)
     for key, value in update_dict.items():
-        if key == "dynamic_dca":
+        if key in ("dynamic_dca", "advisor"):
             data[key] = _deep_merge(data.get(key, {}), value)
         else:
             data[key] = value
@@ -937,8 +1081,20 @@ async def api_update_settings(
         config.reload()
         raise HTTPException(status_code=400, detail=f"Invalid settings: {e}")
 
+    # Hot-reload runtime components so no restart is needed:
+    # - advisor config (provider, model, schedule, key reference, features)
+    # - update-checker schedule when its settings changed
+    if "advisor" in update_dict:
+        _hot_reload_bot(request, reconfigure_advisor=True)
+    if "update_check_enabled" in update_dict or "update_check_interval_hours" in update_dict:
+        _rebuild_update_checker(request, config)
+
     _audit_log("config_updated", update_dict, request)
-    return {"status": "ok", "requires_restart": True, "message": "Settings saved. Restart the bot to apply critical changes."}
+    return {
+        "status": "ok",
+        "requires_restart": False,
+        "message": "Settings saved. Changes were applied to the running bot.",
+    }
 
 
 @router.post("/settings/restore")
@@ -1060,6 +1216,7 @@ async def api_update_exchange(
         config.reload()
     except Exception:
         pass  # keep the 200; validation errors surface via preflight
+    _hot_reload_bot(request, reload_api=True)
     _audit_log("exchange_credentials_updated", {"source": "secrets_store"}, request)
     status = store.public_status()
     configured = getattr(config, "configured", True)
@@ -1090,11 +1247,86 @@ async def api_clear_exchange(
         config.reload()
     except Exception:
         pass
+    _hot_reload_bot(request, reload_api=True)
     _audit_log("exchange_credentials_cleared", {"removed": removed}, request)
     return {
         "status": "ok",
         "message": "Stored credentials removed." if removed else "No stored credentials to remove.",
         "exchange": store.public_status(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# AI advisor (beta): config in config.json, API key in the secrets store
+# ---------------------------------------------------------------------------
+
+@router.get("/settings/advisor")
+def api_advisor_status(
+    config: Config = Depends(get_config),
+    username: str = Depends(require_auth),
+    _rate_limit=Depends(api_rate_limit),
+):
+    """Advisor config block (non-secret) plus masked key storage status."""
+    from bot.advisor.service import kill_switch_active
+
+    return {
+        "advisor": config.to_dict(mask_secrets=True).get("advisor", {}),
+        "key": SecretsStore().section_status("advisor"),
+        "kill_switch_active": kill_switch_active(),
+    }
+
+
+@router.put("/settings/advisor/key")
+@csrf_protect
+async def api_update_advisor_key(
+    request: Request,
+    update: AdvisorKeyUpdate,
+    config: Config = Depends(get_config),
+    username: str = Depends(require_auth),
+    _rate_limit=Depends(settings_rate_limit),
+):
+    """Persist the provider API key to the secrets store (0600).
+
+    The AI_ADVISOR_API_KEY environment variable remains authoritative when set.
+    The key is re-read when the advisory stack is rebuilt, so saving it here
+    takes effect without a restart.
+    """
+    store = SecretsStore()
+    store.save_section("advisor", {"api_key": update.api_key.strip()})
+    try:
+        config.reload()
+    except Exception:
+        pass
+    _hot_reload_bot(request, reconfigure_advisor=True)
+    _audit_log("advisor_key_updated", {"source": "secrets_store"}, request)
+    return {
+        "status": "ok",
+        "message": "Advisor API key saved and applied to the running bot.",
+        "key": store.section_status("advisor"),
+    }
+
+
+@router.post("/settings/advisor/key/clear")
+@csrf_protect
+async def api_clear_advisor_key(
+    request: Request,
+    config: Config = Depends(get_config),
+    username: str = Depends(require_auth),
+    _rate_limit=Depends(settings_rate_limit),
+):
+    """Remove the stored advisor API key. Env vars are untouched."""
+    store = SecretsStore()
+    removed = store.clear_section("advisor")
+    try:
+        config.reload()
+    except Exception:
+        pass
+    _hot_reload_bot(request, reconfigure_advisor=True)
+    _audit_log("advisor_key_cleared", {"removed": removed}, request)
+    return {
+        "status": "ok",
+        "message": "Stored advisor API key removed." if removed else "No stored advisor API key to remove.",
+        "key": store.section_status("advisor"),
     }
 
 
@@ -1536,7 +1768,10 @@ async def api_resolve_order(
         raise HTTPException(status_code=400, detail="Invalid action")
 
     executor = OrderExecutor(api=None, store=tx_store, attempt_store=store, notifier=Notifier())
-    attempt = executor.resolve_unknown(attempt_id, action)
+    try:
+        attempt = executor.resolve_unknown(attempt_id, action)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if not attempt:
         raise HTTPException(status_code=404, detail="Order attempt not found")
     _audit_log("order_resolved", {"attempt_id": attempt_id, "action": action}, request)

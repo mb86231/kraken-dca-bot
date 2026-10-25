@@ -77,6 +77,11 @@ def test_parse_version(tag, expected):
         ("v1.3.2.1", "v1.3.2", True),
         ("v1.3.3-beta", "1.3.2", False),
         ("garbage", "1.3.2", False),
+        ("v1.4.0", "1.4.0-beta.1", True),
+        ("v1.4.0", "1.4.0-beta.2", True),
+        ("v1.3.4", "1.4.0-beta.1", False),
+        ("v1.4.1", "1.4.0-beta.1", True),
+        ("v1.4.0", "1.4.0", False),
     ],
 )
 def test_is_newer_version(latest, current, expected):
@@ -244,10 +249,15 @@ class _Cfg:
 
 
 def test_status_payload_update_available(tmp_path: Path):
+    # Use a synthetic tag one patch above the real APP_VERSION so this test
+    # stays correct no matter which version is current.
+    core = APP_VERSION.split("-")[0]
+    major, minor, patch = core.split(".")
+    newer_tag = f"v{major}.{minor}.{int(patch) + 1}"
     state = UpdateState(tmp_path / "update_state.json")
     state.save(
         {
-            "latest_seen_tag": "v1.4.0",
+            "latest_seen_tag": newer_tag,
             "latest_url": "https://example.com/release",
             "latest_published_at": "2026-10-24T00:00:00Z",
         }
@@ -255,7 +265,7 @@ def test_status_payload_update_available(tmp_path: Path):
     checker = UpdateChecker(state=state, current_version="1.3.2")
     payload = status_payload(_Cfg(), checker)
     assert payload["update_available"] is True
-    assert payload["latest_version"] == "v1.4.0"
+    assert payload["latest_version"] == newer_tag
     assert payload["current_version"] == APP_VERSION
     assert payload["release_url"] == "https://example.com/release"
 
