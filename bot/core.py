@@ -129,7 +129,10 @@ class KrakenDCA:
             narrative_max_words=self.config.advisor_narrative_max_words,
             news_feeds=self.config.advisor_news_feeds,
         )
-        if self.advisor.feature_enabled("briefing"):
+        # The deterministic briefing runs on the feature switch alone; the
+        # AI master toggle only gates the optional narrative (and the
+        # explainer). feature_configured still honours the kill switch.
+        if self.advisor.feature_configured("briefing"):
             self.briefing.start()
         # A3: AI explanations for alerts, asynchronously and advisory-only.
         self.alert_explainer = AlertExplainer(self.advisor, self.notifier)

@@ -504,7 +504,7 @@ class BriefingService:
         it is only cleared when the send fails (enabling a retry). A crash
         after a successful send therefore cannot produce a duplicate.
         """
-        if not self.advisor.feature_enabled("briefing"):
+        if not self.advisor.feature_configured("briefing"):
             return BriefingResult(sent=False, reason="briefing feature disabled")
         current = (now or self._now()).astimezone(BRIEFING_TZ)
         if not is_briefing_day(current, self.frequency, self.weekday, self.month_day):
@@ -575,25 +575,41 @@ class BriefingService:
 
         Sends the real briefing message — snapshot -> optional AI narrative
         -> Telegram — without consuming the scheduled slot and without
-        writing to the briefing history. When the narrative section is
-        enabled, a provider failure is reported as-is (never masked): the
-        point of a test is to surface real problems. When it is disabled,
-        the deterministic message is tested and the AI is not called.
+        writing to the briefing history. The deterministic briefing only
+        needs the morning-briefing feature switch; the AI master toggle
+        gates the optional narrative (and the alert explainer). When the
+        narrative section is enabled, a provider failure is reported as-is
+        (never masked): the point of a test is to surface real problems.
+        When it is disabled, the deterministic message is tested and the
+        AI is not called.
         """
-        if not self.advisor.enabled:
+        if not self.advisor.feature_configured("briefing"):
+            reason: str | None
+            if self.advisor.kill_switch:
+                reason = (
+                    "AI kill switch is active — all advisor features are off "
+                    f"({self.advisor.disabled_reason or 'kill switch'})"
+                )
+            else:
+                reason = (
+                    "morning briefing is not enabled — turn it on in "
+                    "Settings → Reporting"
+                )
+            return TestBriefingResult(ok=False, reason=reason)
+        narrative_enabled = bool(self.sections.get("narrative"))
+        if narrative_enabled and not self.advisor.enabled:
+            detail = self.advisor.disabled_reason or "advisor unavailable"
             return TestBriefingResult(
                 ok=False,
-                reason=self.advisor.disabled_reason or "advisor is disabled",
-            )
-        if not self.advisor.feature_enabled("briefing"):
-            return TestBriefingResult(
-                ok=False,
-                reason="briefing feature is not enabled",
+                reason=(
+                    "AI narrative is enabled, but the advisor is not available "
+                    f"({detail}). Fix the advisor configuration, or disable the "
+                    "AI narrative section in Settings → Reporting"
+                ),
             )
 
         snapshot = self.snapshot_fn()
         values = display_values(snapshot)
-        narrative_enabled = bool(self.sections.get("narrative"))
         general_news, pair_news = self._fetch_news(snapshot)
         narrative_news = list(general_news) + list(pair_news)
 
@@ -637,7 +653,14 @@ class BriefingService:
         try:
             self.notifier.send(message)
             telegram_sent = True
-            reason = None if narrative_enabled else "AI narrative disabled — deterministic message only"
+            reason = (
+                None if narrative_enabled else "AI narrative disabled — deterministic message only"
+            )
+            if not narrative_enabled and not self.advisor.enabled:
+                reason = (
+                    f"{self.advisor.disabled_reason or 'advisor unavailable'} "
+                    "— deterministic message sent (no AI narrative)"
+                )
         except Exception as exc:
             telegram_sent = False
             reason = f"Telegram send failed: {exc}"

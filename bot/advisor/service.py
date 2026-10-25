@@ -105,6 +105,7 @@ class Advisor:
         breaker: CircuitBreaker | None = None,
         executor: BoundedExecutor | None = None,
         disabled_reason: str | None = None,
+        kill_switch: bool = False,
     ):
         self.settings = settings
         self.provider = provider
@@ -117,6 +118,7 @@ class Advisor:
         self.breaker = breaker or CircuitBreaker()
         self.executor = executor or BoundedExecutor(max_workers=settings.max_parallel)
         self.disabled_reason = disabled_reason
+        self.kill_switch = kill_switch
         self.last_error: str | None = None
         self.last_error_at: datetime | None = None
         self.consecutive_failures = 0
@@ -148,9 +150,19 @@ class Advisor:
         )
         if kill_switch_active():
             settings.enabled = False
-            return cls(settings, disabled_reason=f"{KILL_SWITCH_ENV}=false (kill switch)")
+            return cls(
+                settings,
+                disabled_reason=f"{KILL_SWITCH_ENV}=false (kill switch)",
+                kill_switch=True,
+            )
         if not settings.enabled:
-            return cls(settings, disabled_reason="disabled in config")
+            return cls(
+                settings,
+                disabled_reason=(
+                    "AI Advisor master toggle is off "
+                    "(enable it in Settings → AI Advisor)"
+                ),
+            )
         if settings.provider not in ("openai", "ollama"):
             return cls(settings, disabled_reason=f"unknown provider {settings.provider!r}")
         if not settings.model:
@@ -184,6 +196,14 @@ class Advisor:
 
     def feature_enabled(self, feature: str) -> bool:
         return self.enabled and self.settings.features.get(feature, False)
+
+    def feature_configured(self, feature: str) -> bool:
+        """Feature switch state, independent of the AI master toggle.
+
+        Used by outputs that also run deterministically without the AI
+        layer (the morning briefing). The global kill switch still
+        disables everything."""
+        return not self.kill_switch and bool(self.settings.features.get(feature, False))
 
     def _track_error(self, message: str) -> None:
         self.last_error = message

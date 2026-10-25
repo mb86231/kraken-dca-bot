@@ -8,6 +8,20 @@ Releases are tagged `v*` and published as container images to
 `ghcr.io/mb86231/kraken-dca-bot:<tag>` (plus `:latest`). To update a running
 installation, see **Updates** in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
+## [1.4.1] — 2026-10-25
+
+### Fixed
+
+- **Morning briefing no longer requires the AI advisor master toggle.** The
+  deterministic briefing (bot-computed values, news blocks) runs on its own
+  feature switch in Settings → Reporting; only the optional AI narrative and
+  the alert explainer still require the master switch. The global kill
+  switch overrides everything.
+- **Clearer test-briefing errors.** The dashboard test button now reports
+  actionable reasons instead of a bare "disabled in config": which switch is
+  missing, or why the AI layer is unavailable.
+- Settings → Reporting help texts updated to match the new behaviour.
+
 ## [1.4.0] — 2026-10-25
 
 The optional **AI advisor** layer. Everything is off by default, every

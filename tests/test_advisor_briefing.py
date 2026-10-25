@@ -692,14 +692,81 @@ def test_thread_lifecycle(tmp_path: Path, morning: datetime):
 # Manual test send from the dashboard (story A9)
 # ---------------------------------------------------------------------------
 
-def test_test_briefing_disabled_advisor(tmp_path: Path):
-    advisor = Advisor.disabled_stub("disabled in config")
+def _master_off_advisor(features: dict[str, bool] | None = None) -> Advisor:
+    """Advisor with the master toggle off but features configured — the
+    deterministic-briefing scenario."""
+    settings = AdvisorSettings(
+        enabled=False,
+        features=features or {"briefing": True, "explainer": False},
+    )
+    return Advisor(
+        settings,
+        provider=None,
+        disabled_reason="AI Advisor master toggle is off",
+    )
+
+
+def test_test_briefing_master_off_sends_deterministic(tmp_path: Path):
+    """Master toggle off: the deterministic briefing still works on the
+    feature switch alone; the test succeeds with an explanatory note."""
+    advisor = _master_off_advisor()
+    notifier = _FakeNotifier()
+    service = _service(tmp_path, advisor, notifier, _snapshot())
+    result = service.send_test_briefing()
+    assert result.ok is True
+    assert result.telegram_sent is True
+    assert notifier.messages != []
+    assert "master toggle is off" in (result.reason or "")
+    assert result.source == "detailed"
+
+
+def test_test_briefing_master_off_narrative_on_fails_clearly(tmp_path: Path):
+    """Narrative requested but the AI layer is unavailable: the test must
+    fail with an actionable reason, not a bare 'disabled in config'."""
+    advisor = _master_off_advisor()
+    notifier = _FakeNotifier()
+    service = _service(
+        tmp_path, advisor, notifier, _snapshot(), sections={"narrative": True}
+    )
+    result = service.send_test_briefing()
+    assert result.ok is False
+    assert "not available" in (result.reason or "")
+    assert "AI Advisor master toggle is off" in (result.reason or "")
+    assert notifier.messages == []
+
+
+def test_kill_switch_disables_configured_features(tmp_path: Path):
+    """The kill switch overrides the feature switches: even a configured
+    briefing stays off."""
+    settings = AdvisorSettings(
+        enabled=False,
+        features={"briefing": True, "explainer": False},
+    )
+    advisor = Advisor(
+        settings,
+        provider=None,
+        disabled_reason="AI_ADVISOR_ENABLED=false (kill switch)",
+        kill_switch=True,
+    )
+    assert advisor.feature_configured("briefing") is False
     notifier = _FakeNotifier()
     service = _service(tmp_path, advisor, notifier, _snapshot())
     result = service.send_test_briefing()
     assert result.ok is False
-    assert "disabled" in (result.reason or "")
+    assert "kill switch" in (result.reason or "")
     assert notifier.messages == []
+
+
+def test_scheduled_briefing_runs_with_master_off(tmp_path: Path, morning: datetime):
+    """The scheduled deterministic briefing must also fire with the master
+    toggle off (narrative off by default)."""
+    advisor = _master_off_advisor()
+    notifier = _FakeNotifier()
+    service = _service(tmp_path, advisor, notifier, _snapshot())
+    result = service.check_and_send(now=morning)
+    assert result.sent is True
+    assert result.source == "detailed"
+    assert notifier.messages != []
 
 
 def test_test_briefing_feature_off(tmp_path: Path):
