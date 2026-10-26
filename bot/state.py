@@ -19,6 +19,7 @@ _DATETIME_FIELDS = {
     "last_price_at",
     "last_order_at",
     "last_error_at",
+    "last_buy_failure_at",
     "runtime_started_at",
 }
 
@@ -37,6 +38,7 @@ class BotState:
     last_order_at: datetime | None = None
     last_error: str | None = None
     last_error_at: datetime | None = None
+    last_buy_failure_at: datetime | None = None
     simulated: bool = True
     runtime_started_at: datetime | None = None
     estimated_buys: int = 0
@@ -92,6 +94,7 @@ class BotState:
             "last_order_at": self.last_order_at.isoformat() if self.last_order_at else None,
             "last_error": self.last_error,
             "last_error_at": self.last_error_at.isoformat() if self.last_error_at else None,
+            "last_buy_failure_at": self.last_buy_failure_at.isoformat() if self.last_buy_failure_at else None,
             "simulated": self.simulated,
             "live_trading_enabled": self.live_trading_enabled,
             "runtime_started_at": self.runtime_started_at.isoformat() if self.runtime_started_at else None,

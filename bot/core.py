@@ -358,11 +358,39 @@ class KrakenDCA:
         return datetime.fromisoformat(last_tx.date)
 
     def _dynamic_cooldown_ok(self) -> bool:
-        """Return True if the dynamic-buy cooldown has passed since the last buy."""
+        """Return True if the dynamic-buy cooldown has passed since the last buy.
+
+        A recent failed buy (permanent error or insufficient balance) blocks
+        re-triggers for the same cooldown window, so a failing setup cannot
+        fire one failed order per poll interval."""
+        if not self._no_recent_buy_failure(self.config.dynamic_dca_cooldown_hours):
+            return False
         last_buy = self._last_buy_time()
         if last_buy is None:
             return True
         return (now_tz() - last_buy).total_seconds() / 3600 >= self.config.dynamic_dca_cooldown_hours
+
+    def _no_recent_buy_failure(self, cooldown_hours: float) -> bool:
+        """True when no buy failure (permanent error / insufficient balance)
+        happened within the given cooldown window."""
+        failure = self.state.last_buy_failure_at
+        if failure is None:
+            return True
+        return (now_tz() - failure).total_seconds() / 3600 >= cooldown_hours
+
+    def _finish_cycle(self, cycle_time: Optional[datetime], strategy: str) -> None:
+        """Mark a scheduled cycle as handled for terminal outcomes (success,
+        deliberate skip, or permanent failure).
+
+        Without this, a failed or skipped buy at a due cycle re-triggers
+        immediately in a tight loop: the missed-cycle grace window keeps
+        scheduling the slot for "now", and every iteration hammered Kraken
+        with another doomed AddOrder — repeated error responses weigh
+        against Kraken's rate limit and can escalate into temporary API
+        bans. Non-terminal states (UNKNOWN, SUBMITTED, retry-scheduled) are
+        driven by the order executor and must NOT be marked here."""
+        if strategy == "scheduled":
+            self._mark_cycle_executed(cycle_time, strategy)
 
     def _seed_last_cycle_from_transactions(self) -> None:
         """Set last_cycle_at from the most recent scheduled transaction, if any."""
@@ -541,6 +569,7 @@ class KrakenDCA:
             if self.config.mode == "lump_sum":
                 end_date = self._require_end_date()
                 if now_tz() >= end_date:
+                    self._finish_cycle(cycle_time, strategy)
                     self._skip_buy(f"DCA end date {end_date.strftime('%Y-%m-%d')} has been reached", strategy)
                     return
 
@@ -550,6 +579,7 @@ class KrakenDCA:
 
             effective_max_price = self.overrides.temporary_max_price or self.config.max_price
             if effective_max_price is not None and current_price > effective_max_price:
+                self._finish_cycle(cycle_time, strategy)
                 self._skip_buy(f"price {current_price:.2f} is above max_price {effective_max_price:.2f}", strategy)
                 return
 
@@ -563,6 +593,7 @@ class KrakenDCA:
                 monthly_spent = self.store.get_monthly_spent(self.config.trading_pair, self.config.deposit_day, self.config.buy_hour)
                 buy_cost = self.config.crypto_amount * current_price
                 if monthly_spent + buy_cost > self.config.max_monthly_amount:
+                    self._finish_cycle(cycle_time, strategy)
                     self._skip_buy(
                         f"monthly spend {monthly_spent:.2f} + {buy_cost:.2f} would exceed limit "
                         f"{self.config.max_monthly_amount:.2f} — use Buy Now again and confirm "
@@ -574,11 +605,13 @@ class KrakenDCA:
             buy_amount = self.resolve_buy_amount(current_price)
 
             if buy_amount <= 0:
+                self._finish_cycle(cycle_time, strategy)
                 self._skip_buy(f"dynamic tier amount is 0 for current price {current_price:.2f}", strategy)
                 return
 
             min_order = self._minimum_order_amount()
             if buy_amount < min_order:
+                self._finish_cycle(cycle_time, strategy)
                 self._skip_buy(
                     f"resolved amount {buy_amount:.8f} is below minimum order size "
                     f"({min_order:.5f})",
@@ -599,6 +632,7 @@ class KrakenDCA:
                 monthly_spent = self.store.get_monthly_spent(self.config.trading_pair, self.config.deposit_day, self.config.buy_hour)
                 buy_cost = buy_amount * current_price
                 if monthly_spent + buy_cost > self.config.max_monthly_amount:
+                    self._finish_cycle(cycle_time, strategy)
                     self._skip_buy(
                         f"monthly spend {monthly_spent:.2f} + {buy_cost:.2f} would exceed limit "
                         f"{self.config.max_monthly_amount:.2f} — use Buy Now again and confirm "
@@ -636,10 +670,32 @@ class KrakenDCA:
                     notes="Dry-run buy",
                     dynamic_tier=dynamic_tier,
                 )
-                self._mark_cycle_executed(cycle_time, strategy)
+                self._finish_cycle(cycle_time, strategy)
                 self.display_statistics(current_price)
                 return
 
+            # Balance pre-check: never submit an order the account cannot
+            # fill. Kraken answers insufficient funds with a permanent
+            # error, and every error response weighs against the API rate
+            # limit — repeated doomed placements escalate into temporary
+            # API bans. A failed check must not block the buy.
+            try:
+                live_balance = self.api.get_balance()
+                live_fiat = self.get_fiat_balance(live_balance)
+                needed_fiat = trade_value + estimated_fee
+                if live_fiat < needed_fiat:
+                    self.state.update(last_buy_failure_at=now_tz())
+                    self._finish_cycle(cycle_time, strategy)
+                    self._skip_buy(
+                        f"insufficient {fiat_currency} balance: need ~{needed_fiat:.2f} "
+                        f"(incl. fee), available {live_fiat:.2f}",
+                        strategy,
+                    )
+                    return
+            except Exception as exc:  # noqa: BLE001
+                get_logger().warning(
+                    f"Balance pre-check failed, proceeding with order: {redact_sensitive(str(exc))}"
+                )
             # Live order: submit through the executor with idempotency + retry.
             def _on_confirmed(attempt):
                 self._mark_cycle_executed(cycle_time, strategy)
@@ -669,6 +725,11 @@ class KrakenDCA:
                 # on_confirmed already handled confirmation messaging.
                 pass
             elif attempt.state == OrderState.HOLD.value:
+                # Permanent failure: record it (blocks dynamic/dip re-triggers
+                # for the cooldown window) and mark the scheduled cycle as
+                # handled so the grace window does not re-fire immediately.
+                self.state.update(last_buy_failure_at=now_tz())
+                self._finish_cycle(cycle_time, strategy)
                 print(f"{Colors.RED}✗ Order attempt on HOLD: {attempt.final_outcome}{Colors.RESET}")
             elif attempt.state == OrderState.UNKNOWN.value:
                 print(f"{Colors.YELLOW}⚠ Order outcome unknown; reconciling before retry{Colors.RESET}")
@@ -682,7 +743,7 @@ class KrakenDCA:
             safe_error = redact_sensitive(str(e))
             get_logger().error(f"Buy execution error: {safe_error}")
             print(f"{Colors.RED}✗ Error executing buy: {safe_error}{Colors.RESET}")
-            self.state.update(last_error=safe_error, last_error_at=now_tz())
+            self.state.update(last_error=safe_error, last_error_at=now_tz(), last_buy_failure_at=now_tz())
             self.state.warning(safe_error)
             create_alert(f"Buy failed: {safe_error}", "error")
             self.notifier.send(f"❌ Buy error\n{safe_error}")
@@ -1003,8 +1064,11 @@ class KrakenDCA:
 
                             if dip_threshold > 0 and current_price <= dip_threshold:
                                 cooldown_ok = (
-                                    last_dip_buy_time is None or
-                                    (now - last_dip_buy_time).total_seconds() / 3600 >= self.config.dip_buy_cooldown_hours
+                                    self._no_recent_buy_failure(self.config.dip_buy_cooldown_hours)
+                                    and (
+                                        last_dip_buy_time is None or
+                                        (now - last_dip_buy_time).total_seconds() / 3600 >= self.config.dip_buy_cooldown_hours
+                                    )
                                 )
                                 if cooldown_ok:
                                     print(f"\n{Colors.MAGENTA}{Colors.BOLD}DIP DETECTED!{Colors.RESET} "

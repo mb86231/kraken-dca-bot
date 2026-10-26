@@ -203,6 +203,10 @@ class OrderAttemptStore:
 class OrderExecutor:
     """Execute buys with retry, reconciliation, and hold state."""
 
+    # Suppress repeat HOLD alerts/Telegram for the same reason within this
+    # window (seconds). The attempt still transitions to HOLD every time.
+    _HOLD_NOTIFY_TTL_SECONDS = 3600
+
     def __init__(
         self,
         api: KrakenAPI | DemoKrakenAPI | None = None,
@@ -221,6 +225,10 @@ class OrderExecutor:
         self.config = config
         self.preflight_result_path = preflight_result_path
         self._policy = _retry_policy()
+        # HOLD alert throttling: reason key -> last notify time. Repeated
+        # holds with the same reason (e.g. a balance that stays insufficient
+        # for days) must not spam alerts and Telegram every cycle.
+        self._hold_notify_at: dict[str, datetime] = {}
 
     # -----------------------------------------------------------------------
     # Public API
@@ -773,13 +781,30 @@ class OrderExecutor:
         # Else remain UNKNOWN and reconcile again later.
 
     def _enter_hold(self, attempt: OrderAttempt, reason: str) -> None:
-        """Move an attempt to HOLD and alert the operator."""
+        """Move an attempt to HOLD and alert the operator (throttled).
+
+        The attempt always transitions to HOLD and is persisted. The alert
+        and Telegram notification are suppressed when the same reason was
+        already notified within ``_HOLD_NOTIFY_TTL_SECONDS`` — a permanent
+        condition (e.g. insufficient balance lasting days) must not page
+        the operator on every attempt.
+        """
         if attempt.state == OrderState.HOLD.value:
             return
         attempt.state = OrderState.HOLD.value
         attempt.final_outcome = reason
         self.attempt_store.save(attempt)
         sanitized = redact_sensitive(reason)
+        now = utc_now()
+        # Prune expired entries so the map stays small.
+        for key, ts in list(self._hold_notify_at.items()):
+            if (now - ts).total_seconds() >= self._HOLD_NOTIFY_TTL_SECONDS:
+                del self._hold_notify_at[key]
+        notify_key = sanitized[:60]
+        last_notify = self._hold_notify_at.get(notify_key)
+        if last_notify is not None:
+            return
+        self._hold_notify_at[notify_key] = now
         create_alert(
             f"Order attempt {attempt.attempt_id} on HOLD: {sanitized}",
             severity="error",

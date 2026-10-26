@@ -747,5 +747,55 @@ def test_simulated_order_bypasses_live_validation(executor: OrderExecutor, fake_
     assert attempt.simulated is True
 
 
+def _mk_attempt(attempt_id: str, userref: int) -> OrderAttempt:
+    return OrderAttempt(
+        attempt_id=attempt_id,
+        cycle_id=f"c:{attempt_id}",
+        pair="XBTCHF",
+        amount=0.0001,
+        price=50000.0,
+        strategy="scheduled",
+        simulated=False,
+        attempt_number=1,
+        userref=userref,
+    )
+
+
+def test_hold_alerts_are_throttled_per_reason(executor: OrderExecutor, monkeypatch):
+    """Repeated HOLDs with the same reason alert once per TTL window — a
+    permanent condition (e.g. balance stays insufficient) must not page
+    the operator on every attempt. The attempt still goes to HOLD."""
+    fixed_now = utc_now()
+    monkeypatch.setattr(oe_module, "utc_now", lambda: fixed_now)
+    alerts: list[str] = []
+    monkeypatch.setattr(oe_module, "create_alert", lambda msg, **kw: alerts.append(msg))
+    sent: list[str] = []
+    executor.notifier = MagicMock()
+    executor.notifier.send.side_effect = sent.append
+
+    a1 = _mk_attempt("oa-t1", 9001)
+    executor._enter_hold(a1, "EOrder:Insufficient funds")
+    assert a1.state == OrderState.HOLD.value
+    assert len(alerts) == 1 and len(sent) == 1
+
+    # Same reason, new attempt: throttled (no second alert/telegram).
+    a2 = _mk_attempt("oa-t2", 9002)
+    executor._enter_hold(a2, "EOrder:Insufficient funds")
+    assert a2.state == OrderState.HOLD.value
+    assert len(alerts) == 1 and len(sent) == 1
+
+    # A different reason notifies again.
+    a3 = _mk_attempt("oa-t3", 9003)
+    executor._enter_hold(a3, "EOrder:Invalid price")
+    assert len(alerts) == 2 and len(sent) == 2
+
+    # After the TTL the same reason notifies again.
+    later = fixed_now + timedelta(seconds=OrderExecutor._HOLD_NOTIFY_TTL_SECONDS + 5)
+    monkeypatch.setattr(oe_module, "utc_now", lambda: later)
+    a4 = _mk_attempt("oa-t4", 9004)
+    executor._enter_hold(a4, "EOrder:Insufficient funds")
+    assert len(alerts) == 3 and len(sent) == 3
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

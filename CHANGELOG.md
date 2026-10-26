@@ -8,6 +8,29 @@ Releases are tagged `v*` and published as container images to
 `ghcr.io/mb86231/kraken-dca-bot:<tag>` (plus `:latest`). To update a running
 installation, see **Updates** in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
+## [1.4.2] — 2026-10-26
+
+### Fixed
+
+- **No more Kraken hammering when the account cannot fund a buy.** A bot
+  whose fiat balance is too low used to call `AddOrder` in a loop — at a
+  due monthly cycle in a tight loop (the missed-cycle grace window kept
+  re-scheduling the slot), and with Dynamic DCA about once per poll
+  interval (the cooldown only counted successful buys). Kraken answers
+  insufficient funds with a permanent error, and repeated error responses
+  weigh against the API rate limit — they can escalate into temporary
+  API bans.
+  - Live buys now pre-check the account balance (order value incl. fee)
+    and skip with a clear alert instead of submitting a doomed order.
+  - A scheduled cycle is marked as handled for every terminal outcome
+    (success, deliberate skip, or permanent failure) so it cannot
+    re-fire immediately; UNKNOWN / retrying attempts stay with the
+    order executor as before.
+  - A failed buy (permanent error or insufficient balance) now blocks
+    Dynamic DCA and legacy dip re-triggers for the cooldown window.
+  - HOLD alerts and Telegram notifications are throttled to once per
+    hour per reason — the attempt still goes on HOLD every time.
+
 ## [1.4.1] — 2026-10-25
 
 ### Fixed

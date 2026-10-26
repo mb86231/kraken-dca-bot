@@ -335,5 +335,95 @@ def test_bot_state_respects_paused_override(tmp_path: Path, monkeypatch):
     assert bot.state.status == "paused"
 
 
+# ---------------------------------------------------------------------------
+# Insufficient-balance hardening (v1.4.2): never hammer Kraken with orders
+# the account cannot fill — repeated error responses weigh against Kraken's
+# rate limit and can escalate into temporary API bans.
+# ---------------------------------------------------------------------------
+
+
+def _live_bot(bot: KrakenDCA) -> KrakenDCA:
+    """Switch a dry-run test bot to the live path with a stubbed executor."""
+    bot.config.live_trading_enabled = True
+    return bot
+
+
+def test_execute_buy_balance_pre_check_skips_order(tmp_path: Path, monkeypatch):
+    """Zero fiat balance: the buy is skipped BEFORE any Kraken order call,
+    the scheduled cycle is marked handled, and the failure is recorded so
+    dynamic/dip triggers are cooled down."""
+    bot = _live_bot(_make_bot(tmp_path, monkeypatch))
+    bot.api = _FakeAPI(price=100000.0, balance={"ZCHF": 0.0, "CHF": 0.0})  # type: ignore[assignment]
+    monkeypatch.setattr(core_module, "create_alert", lambda *a, **k: None)
+
+    class _BoomExecutor:
+        def submit_buy(self, **_kw):
+            raise AssertionError("submit_buy must not be called with zero balance")
+
+    bot.order_executor = _BoomExecutor()  # type: ignore[assignment]
+    cycle_time = datetime(2026, 7, 24, 8, 0, tzinfo=timezone.utc).astimezone(now_tz().tzinfo)
+
+    bot.execute_buy(strategy="scheduled", cycle_time=cycle_time)
+
+    assert bot.store.get_transaction_count("XBTCHF") == 0
+    assert bot.state.last_cycle_at == cycle_time
+    assert bot.state.last_buy_failure_at is not None
+
+
+def test_execute_buy_marks_cycle_on_hold(tmp_path: Path, monkeypatch):
+    """A permanent failure (HOLD) at a due scheduled cycle must mark the
+    cycle as handled — otherwise the grace window re-fires the slot
+    immediately and hammers Kraken with doomed orders."""
+    from types import SimpleNamespace
+
+    from bot.order_execution import OrderState
+
+    bot = _live_bot(_make_bot(tmp_path, monkeypatch))
+    monkeypatch.setattr(core_module, "create_alert", lambda *a, **k: None)
+
+    class _HoldExecutor:
+        def submit_buy(self, **_kw):
+            return SimpleNamespace(
+                state=OrderState.HOLD.value,
+                final_outcome="EOrder:Insufficient funds",
+            )
+
+    bot.order_executor = _HoldExecutor()  # type: ignore[assignment]
+    cycle_time = datetime(2026, 7, 24, 8, 0, tzinfo=timezone.utc).astimezone(now_tz().tzinfo)
+
+    bot.execute_buy(strategy="scheduled", cycle_time=cycle_time)
+
+    assert bot.store.get_transaction_count("XBTCHF") == 0
+    assert bot.state.last_cycle_at == cycle_time
+    assert bot.state.last_buy_failure_at is not None
+
+
+def test_execute_buy_marks_cycle_on_skip(tmp_path: Path, monkeypatch):
+    """A deliberate budget skip at a due cycle also marks the cycle, so it
+    cannot re-trigger in a tight skip-alert loop."""
+    bot = _make_bot(tmp_path, monkeypatch, max_monthly_amount=5.0)
+    monkeypatch.setattr(core_module, "create_alert", lambda *a, **k: None)
+    cycle_time = datetime(2026, 7, 24, 8, 0, tzinfo=timezone.utc).astimezone(now_tz().tzinfo)
+
+    bot.execute_buy(strategy="scheduled", cycle_time=cycle_time)
+
+    assert bot.store.get_transaction_count("XBTCHF") == 0
+    assert bot.state.last_cycle_at == cycle_time
+
+
+def test_buy_failure_blocks_dynamic_cooldown(tmp_path: Path, monkeypatch):
+    """A recent failed buy (permanent error or insufficient balance) blocks
+    dynamic re-triggers for the cooldown window."""
+    bot = _make_bot(tmp_path, monkeypatch, dynamic_dca_enabled=True)
+
+    assert bot._no_recent_buy_failure(4.0) is True
+    assert bot._dynamic_cooldown_ok() is True
+
+    bot.state.last_buy_failure_at = now_tz()
+
+    assert bot._no_recent_buy_failure(4.0) is False
+    assert bot._dynamic_cooldown_ok() is False
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
