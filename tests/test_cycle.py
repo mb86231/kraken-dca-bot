@@ -195,6 +195,57 @@ def test_execute_buy_manual_does_not_update_last_cycle_at(tmp_path: Path, monkey
     assert bot.store.get_transaction_count("XBTCHF") == 1
 
 
+def test_calculate_next_buy_never_postpones_existing_schedule(tmp_path: Path, monkeypatch):
+    # Issue #18: a recalculation must not push an already scheduled buy later.
+    bot = _make_bot(tmp_path, monkeypatch)
+    tz = now_tz().tzinfo
+    bot.state.last_cycle_at = datetime(2026, 6, 24, 8, 0, 0, tzinfo=timezone.utc).astimezone(tz)
+    fixed_now = datetime(2026, 7, 10, 12, 0, 0, tzinfo=timezone.utc).astimezone(tz)
+    monkeypatch.setattr(core_module, "now_tz", lambda: fixed_now)
+
+    fresh, _, _, _ = bot.calculate_next_buy()
+    # A few minutes from now is always earlier than the fresh calculation
+    # (remaining period / max_buys is far larger at 1000 affordable buys).
+    earlier = fixed_now + timedelta(minutes=5)
+    assert earlier < fresh
+
+    # A recalculation while the bot is already counting down to `earlier`
+    # (restart / balance recalc) keeps `earlier`, not the fresh later time.
+    next_buy, _, _, _ = bot.calculate_next_buy(current_schedule=earlier)
+    assert next_buy == earlier
+
+
+def test_calculate_next_buy_keeps_earlier_fresh_time(tmp_path: Path, monkeypatch):
+    # The never-postpone rule must not resurrect a stale later schedule either:
+    # when the fresh calculation is earlier, it wins.
+    bot = _make_bot(tmp_path, monkeypatch)
+    tz = now_tz().tzinfo
+    bot.state.last_cycle_at = datetime(2026, 6, 24, 8, 0, 0, tzinfo=timezone.utc).astimezone(tz)
+    fixed_now = datetime(2026, 7, 10, 12, 0, 0, tzinfo=timezone.utc).astimezone(tz)
+    monkeypatch.setattr(core_module, "now_tz", lambda: fixed_now)
+
+    fresh, _, _, _ = bot.calculate_next_buy()
+    stale_later = fresh + timedelta(hours=3)
+    next_buy, _, _, _ = bot.calculate_next_buy(current_schedule=stale_later)
+    assert next_buy == fresh
+
+
+def test_calculate_next_buy_ignores_past_schedule(tmp_path: Path, monkeypatch):
+    # A persisted schedule in the past (bot was down past the slot) must not
+    # block the calculation; the missed-cycle grace logic decides instead.
+    bot = _make_bot(tmp_path, monkeypatch)
+    tz = now_tz().tzinfo
+    bot.state.last_cycle_at = datetime(2026, 6, 24, 8, 0, 0, tzinfo=timezone.utc).astimezone(tz)
+    fixed_now = datetime(2026, 7, 10, 12, 0, 0, tzinfo=timezone.utc).astimezone(tz)
+    monkeypatch.setattr(core_module, "now_tz", lambda: fixed_now)
+
+    past_slot = fixed_now - timedelta(hours=5)
+    next_buy, _, _, _ = bot.calculate_next_buy(current_schedule=past_slot)
+    fresh, _, _, _ = bot.calculate_next_buy()
+    assert next_buy == fresh
+    assert next_buy > fixed_now
+
+
 def test_cycle_grace_constant_is_positive():
     assert CYCLE_GRACE_HOURS > 0
 

@@ -445,13 +445,20 @@ class KrakenDCA:
         if strategy == "scheduled" and cycle_time is not None:
             self.state.update(last_cycle_at=cycle_time)
 
-    def calculate_next_buy(self) -> Tuple[datetime, float, int, int]:
+    def calculate_next_buy(self, current_schedule: Optional[datetime] = None) -> Tuple[datetime, float, int, int]:
         """Calculate next buy time based on mode.
 
         In recurring mode the bot uses the persisted ``last_cycle_at`` to recover
         the real cycle boundary. If a cycle was missed (e.g. the bot was down) and
         we are still within ``CYCLE_GRACE_HOURS`` of the boundary, the buy is
         scheduled immediately instead of being silently skipped to the next month.
+
+        ``current_schedule`` is the buy time the bot is already working with
+        (persisted ``next_cycle_at`` on startup, the in-memory schedule after
+        deposit/dynamic/dip recalculations). A recalculation may only move the
+        next buy earlier, never later — anchoring every recalc to ``now``
+        otherwise pushes the buy back on every restart or tiny balance change
+        and it never executes (issue #18).
 
         Returns: (next_buy_datetime, hours_until_buy, remaining_hours_in_period, max_buys)
         """
@@ -530,6 +537,11 @@ class KrakenDCA:
         else:
             hours_between_buys = remaining_hours / max_buys
             next_buy_time = now + timedelta(hours=hours_between_buys)
+            # Never postpone an already scheduled buy (issue #18): restarts,
+            # tiny balance credits, and post-buy recalculations must not push
+            # the next buy beyond the time the bot was already counting down to.
+            if current_schedule is not None and now < current_schedule < next_buy_time:
+                next_buy_time = current_schedule
 
         return next_buy_time, hours_between_buys, int(remaining_hours), max(1, max_buys)
 
@@ -952,7 +964,14 @@ class KrakenDCA:
 
                 try:
                     self.state.update(status="waiting")
-                    next_buy_time, hours_until_buy, remaining_hours, max_buys = self.calculate_next_buy()
+                    # Restore the persisted schedule so a restart does not
+                    # re-anchor the plan to "now" and postpone the next buy
+                    # (issue #18). A persisted time in the past is ignored:
+                    # the missed-cycle grace logic below decides whether the
+                    # cycle is still due.
+                    next_buy_time, hours_until_buy, remaining_hours, max_buys = self.calculate_next_buy(
+                        current_schedule=self.state.next_cycle_at
+                    )
                     self.state.update(next_cycle_at=next_buy_time, estimated_buys=max_buys)
 
                     # Get current balance and calculate stats
@@ -1047,8 +1066,11 @@ class KrakenDCA:
                                 print(f"\n{Colors.MAGENTA}{Colors.BOLD}DYNAMIC BUY TRIGGERED!{Colors.RESET} "
                                       f"Price {current_price:.2f} resolves to buy amount {target_amount:.8f} BTC (base {base_amount:.8f})")
                                 self.execute_buy(strategy="dynamic")
-                                # Recalculate schedule after dynamic buy
-                                next_buy_time, hours_until_buy, remaining_hours, max_buys = self.calculate_next_buy()
+                                # Recalculate schedule after dynamic buy; never
+                                # postpone the existing schedule (issue #18).
+                                next_buy_time, hours_until_buy, remaining_hours, max_buys = self.calculate_next_buy(
+                                    current_schedule=next_buy_time
+                                )
                                 self.state.update(next_cycle_at=next_buy_time, estimated_buys=max_buys)
                                 formatted_time = next_buy_time.strftime("%Y-%m-%d %H:%M:%S %Z")
                                 print(f"{Colors.BOLD}Recalculated next buy: {Colors.CYAN}{formatted_time}{Colors.RESET}\n")
@@ -1075,8 +1097,11 @@ class KrakenDCA:
                                           f"Price {current_price:.2f} is ≥{self.config.dip_threshold_percent}% below last buy price {last_buy_price:.2f}")
                                     self.execute_buy(strategy="dip")
                                     last_dip_buy_time = now
-                                    # Recalculate schedule after dip buy
-                                    next_buy_time, hours_until_buy, remaining_hours, max_buys = self.calculate_next_buy()
+                                    # Recalculate schedule after dip buy; never
+                                    # postpone the existing schedule (issue #18).
+                                    next_buy_time, hours_until_buy, remaining_hours, max_buys = self.calculate_next_buy(
+                                        current_schedule=next_buy_time
+                                    )
                                     self.state.update(next_cycle_at=next_buy_time, estimated_buys=max_buys)
                                     formatted_time = next_buy_time.strftime("%Y-%m-%d %H:%M:%S %Z")
                                     print(f"{Colors.BOLD}Recalculated next buy: {Colors.CYAN}{formatted_time}{Colors.RESET}\n")
@@ -1091,15 +1116,29 @@ class KrakenDCA:
                         # Deposit detection: new fiat arrived
                         if available_fiat > previous_fiat:
                             deposit_amount = available_fiat - previous_fiat
-                            print(f"\n{Colors.GREEN}{Colors.BOLD}NEW DEPOSIT DETECTED!{Colors.RESET} "
-                                  f"+{deposit_amount:.2f} {fiat_currency} "
-                                  f"(balance: {available_fiat:.2f} {fiat_currency})")
                             previous_fiat = available_fiat
-                            # Recalculate schedule with new balance
-                            next_buy_time, hours_until_buy, remaining_hours, max_buys = self.calculate_next_buy()
-                            self.state.update(next_cycle_at=next_buy_time, estimated_buys=max_buys)
-                            formatted_time = next_buy_time.strftime("%Y-%m-%d %H:%M:%S %Z")
-                            print(f"{Colors.BOLD}Recalculated next buy: {Colors.CYAN}{formatted_time}{Colors.RESET}\n")
+                            # Ignore dust credits (Kraken rewards/interest of a
+                            # few cents): only a balance increase worth at least
+                            # one buy reschedules the plan (issue #18). Tiny
+                            # credits used to push the next buy back on every
+                            # poll, so a scheduled buy could never execute.
+                            cost_per_buy = self.config.crypto_amount * current_price
+                            if cost_per_buy > 0 and deposit_amount < cost_per_buy:
+                                print(f"[{now.strftime('%H:%M:%S')}] Balance increase of "
+                                      f"{deposit_amount:.2f} {fiat_currency} below one buy "
+                                      f"({cost_per_buy:.2f}) — ignored for scheduling")
+                            else:
+                                print(f"\n{Colors.GREEN}{Colors.BOLD}NEW DEPOSIT DETECTED!{Colors.RESET} "
+                                      f"+{deposit_amount:.2f} {fiat_currency} "
+                                      f"(balance: {available_fiat:.2f} {fiat_currency})")
+                                # Recalculate schedule with new balance; never
+                                # postpone the existing schedule (issue #18).
+                                next_buy_time, hours_until_buy, remaining_hours, max_buys = self.calculate_next_buy(
+                                    current_schedule=next_buy_time
+                                )
+                                self.state.update(next_cycle_at=next_buy_time, estimated_buys=max_buys)
+                                formatted_time = next_buy_time.strftime("%Y-%m-%d %H:%M:%S %Z")
+                                print(f"{Colors.BOLD}Recalculated next buy: {Colors.CYAN}{formatted_time}{Colors.RESET}\n")
 
                         if self.config.dynamic_dca_enabled:
                             print(f"[{now.strftime('%H:%M:%S')}] Price: {current_price:.2f} | "

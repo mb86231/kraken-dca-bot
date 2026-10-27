@@ -8,6 +8,25 @@ Releases are tagged `v*` and published as container images to
 `ghcr.io/mb86231/kraken-dca-bot:<tag>` (plus `:latest`). To update a running
 installation, see **Updates** in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
+## [1.4.3] — 2026-10-27
+
+### Fixed
+
+- **Scheduled buys can no longer be postponed forever** (issue #18): the next
+  buy was always re-anchored to the current time (`now + remaining / max_buys`),
+  so every container restart, every dynamic/dip recalculation, and every
+  detected balance increase — even a few cents of Kraken rewards — pushed the
+  buy further back. With a small balance (few buys per period) the schedule
+  converged only asymptotically to the period end, so buys could be delayed
+  for weeks or never execute.
+  - A recalculation may now only move the next buy **earlier**, never later —
+    the bot keeps counting down to the time it was already scheduled for.
+  - On startup the persisted schedule (`next_cycle_at`) is restored instead of
+    being recomputed from scratch; a slot that fell due while the bot was down
+    is still handled by the existing missed-cycle grace logic.
+  - Balance increases below the cost of a single buy are ignored for
+    scheduling, so reward/interest dust no longer triggers a recalculation.
+
 ## [1.4.2] — 2026-10-26
 
 ### Fixed
