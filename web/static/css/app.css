@@ -232,6 +232,9 @@ a:hover { text-decoration: underline; }
   justify-self: start;
 }
 
+/* Hamburger button: hidden on desktop, shown in the mobile media query. */
+.menu-toggle { display: none; }
+
 .topbar-controls {
   display: flex;
   align-items: center;
@@ -376,14 +379,79 @@ a:hover { text-decoration: underline; }
 
 @media (max-width: 768px) {
   .layout { grid-template-columns: 1fr; }
+
+  /* Off-canvas navigation drawer (toggled via #menu-toggle). */
   .sidebar {
-    position: static;
-    height: auto;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100dvh;
+    width: 262px;
+    z-index: 60;
+    border-right: 1px solid var(--border);
+    border-bottom: none;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    overflow-y: auto;
   }
+  .sidebar.open { transform: translateX(0); }
+
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 50;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  .sidebar-overlay.show { opacity: 1; }
+
+  .menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+    font-size: 1.15rem;
+    cursor: pointer;
+    flex: none;
+  }
+
+  /* Compact two-row topbar: title + badges first, actions scroll below. */
+  .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+  }
+  .page-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 1.2rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .topbar-badges { order: 3; }
+  .topbar-controls {
+    order: 4;
+    flex-basis: 100%;
+    justify-self: stretch;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .topbar-controls::-webkit-scrollbar { display: none; }
+  .topbar-controls .btn { white-space: nowrap; flex: none; }
+
+  .content { padding: 1rem; }
+  .grid-5 { grid-template-columns: repeat(2, 1fr); }
   .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
-  .topbar { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
 }
 
 .card {

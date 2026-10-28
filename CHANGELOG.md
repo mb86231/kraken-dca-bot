@@ -8,6 +8,20 @@ Releases are tagged `v*` and published as container images to
 `ghcr.io/mb86231/kraken-dca-bot:<tag>` (plus `:latest`). To update a running
 installation, see **Updates** in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
+## [1.4.5] — 2026-10-28
+
+### Changed
+
+- **Mobile layout overhaul** (phones / small screens): the navigation is no
+  longer stacked on top of the page eating the viewport. It is now an
+  off-canvas drawer that opens via a hamburger button (top-left), closes on
+  backdrop tap, Escape, or after selecting a page. Logout and the theme
+  toggle sit at the drawer bottom. The top bar collapses to a single title
+  row (menu, page title, status badges) with Buy Now / Pause / Restart /
+  Live as a horizontally scrollable row beneath. Content padding is
+  reduced and stat cards go 2- or 1-column on phones. Desktop layout is
+  unchanged.
+
 ## [1.4.4] — 2026-10-28
 
 ### Added

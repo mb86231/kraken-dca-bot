@@ -56,6 +56,7 @@
 
     <main class="main">
       <header class="topbar">
+        <button class="menu-toggle" id="menu-toggle" aria-label="Open navigation menu" aria-expanded="false">☰</button>
         <h1 class="page-title">{% block page_title %}Dashboard{% endblock %}</h1>
         <div class="topbar-controls">
           <button class="btn btn-small btn-primary" id="buy-now-btn">Buy Now</button>
@@ -86,6 +87,7 @@
       </div>
     </main>
   </div>
+  <div class="sidebar-overlay" id="sidebar-overlay" hidden></div>
 
   <div class="modal" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
     <div class="modal-backdrop" data-confirm-cancel></div>
@@ -151,6 +153,39 @@
       });
 
       refreshUpdateStatus();
+    })();
+  </script>
+  <script>
+    (function () {
+      // Mobile navigation drawer: hamburger opens the off-canvas sidebar,
+      // overlay click or selecting a page closes it.
+      const toggle = document.getElementById('menu-toggle');
+      const sidebar = document.querySelector('.sidebar');
+      const overlay = document.getElementById('sidebar-overlay');
+      if (!toggle || !sidebar || !overlay) return;
+
+      function openMenu() {
+        sidebar.classList.add('open');
+        overlay.hidden = false;
+        requestAnimationFrame(function () { overlay.classList.add('show'); });
+        toggle.setAttribute('aria-expanded', 'true');
+      }
+      function closeMenu() {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('show');
+        overlay.hidden = true;
+        toggle.setAttribute('aria-expanded', 'false');
+      }
+      toggle.addEventListener('click', function () {
+        if (sidebar.classList.contains('open')) { closeMenu(); } else { openMenu(); }
+      });
+      overlay.addEventListener('click', closeMenu);
+      sidebar.querySelectorAll('a.nav-item').forEach(function (link) {
+        link.addEventListener('click', closeMenu);
+      });
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && sidebar.classList.contains('open')) closeMenu();
+      });
     })();
   </script>
   {% block scripts %}{% endblock %}
