@@ -22,6 +22,7 @@ class DynamicTierUpdate(BaseModel):
     threshold_percent: float
     amount: float = Field(..., ge=0)
     enabled: bool
+    override_monthly_budget: bool = False
 
 
 class DynamicDCAUpdate(BaseModel):
@@ -202,6 +203,7 @@ class DynamicTierResponse(BaseModel):
     threshold_percent: float
     amount: float
     enabled: bool
+    override_monthly_budget: bool = False
 
 
 class DynamicDCAResponse(BaseModel):

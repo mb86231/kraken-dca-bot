@@ -60,12 +60,18 @@ class DynamicTier:
     threshold_percent: float
     amount: float
     enabled: bool
+    # When True, a buy matched by this tier ignores max_monthly_amount (the
+    # reserve is spent opportunistically; the buy is still bounded by the
+    # live Kraken balance pre-check and does not count toward the monthly
+    # budget).
+    override_monthly_budget: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "threshold_percent": self.threshold_percent,
             "amount": self.amount,
             "enabled": self.enabled,
+            "override_monthly_budget": self.override_monthly_budget,
         }
 
 
@@ -188,6 +194,7 @@ class Config:
                 threshold_percent=float(tier.get("threshold_percent", 0.0)),
                 amount=float(tier.get("amount", 0.0)),
                 enabled=bool(tier.get("enabled", True)),
+                override_monthly_budget=bool(tier.get("override_monthly_budget", False)),
             )
             for tier in tiers
         ]

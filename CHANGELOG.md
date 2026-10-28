@@ -8,6 +8,29 @@ Releases are tagged `v*` and published as container images to
 `ghcr.io/mb86231/kraken-dca-bot:<tag>` (plus `:latest`). To update a running
 installation, see **Updates** in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
+## [1.5.0] — 2026-10-28
+
+### Added
+
+- **Per-tier monthly budget override** (issue #20): a dynamic tier can now
+  opt out of the monthly budget cap entirely. A buy matched by a tier with
+  `override_monthly_budget: true` goes through even when the monthly budget
+  is exhausted, does not count toward the monthly budget, and is labelled
+  `dynamic -20 % · budget override` in the transactions list. The Telegram
+  notification and the insufficient-balance skip alert name the override
+  explicitly. Intended for crash protection on the deepest dip tier.
+  - New per-tier flag `override_monthly_budget` (default `false`; existing
+    configs keep working unchanged).
+  - New transaction field `budget_override`, excluded from
+    `get_monthly_spent` so the remaining budget for scheduled buys is
+    untouched.
+  - Settings UI: new "Budget override" checkbox per tier plus a warning
+    banner that appears as soon as an enabled tier overrides the budget.
+  - Safety: the override never bypasses the balance pre-check — an
+    unfundable buy is skipped with an explicit alert. Scheduled and manual
+    buys are unaffected; the manual "buy anyway" one-shot override keeps its
+    existing semantics (those buys still count toward the budget).
+
 ## [1.4.5] — 2026-10-28
 
 ### Changed

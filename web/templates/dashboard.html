@@ -125,7 +125,7 @@
         const li = document.createElement('li');
         const time = t.date ? new Date(t.date).toLocaleString() : '—';
         const strategy = (t.strategy === 'dynamic' && t.dynamic_tier != null)
-          ? `dynamic ${t.dynamic_tier}%`
+          ? `dynamic ${t.dynamic_tier}%${t.budget_override ? ' · budget override' : ''}`
           : (t.strategy || 'scheduled');
         const simulated = t.simulated ? ' (sim)' : '';
         li.appendChild(el('strong', null, time));

@@ -14,7 +14,7 @@ from typing import Dict, Optional, Tuple
 from bot.api_client import KrakenAPI
 from bot.alerts import create_alert
 from bot.colors import Colors
-from bot.config import Config
+from bot.config import Config, DynamicTier
 from bot.demo import DemoKrakenAPI, is_demo_mode, seed_demo_transactions
 from bot.logger import get_logger
 from bot.notifier import Notifier
@@ -305,11 +305,8 @@ class KrakenDCA:
             pass
         return MIN_ORDER_CRYPTO_AMOUNT
 
-    def _match_tier(self, price_change_percent: float) -> Tuple[Optional[float], float]:
-        """Return (threshold_percent, amount) of the matching tier.
-
-        ``threshold_percent`` is None when no tier matched and the base amount
-        is used as fallback.
+    def _match_tier_object(self, price_change_percent: float) -> Optional[DynamicTier]:
+        """Return the matching enabled tier, or None for the base amount.
 
         Dip tiers (threshold <= 0) match only when the drop actually reached
         the threshold (``change <= threshold``); the deepest reached tier
@@ -323,12 +320,24 @@ class KrakenDCA:
         if price_change_percent < 0:
             for tier in sorted(enabled, key=lambda t: t.threshold_percent):
                 if tier.threshold_percent <= 0 and price_change_percent <= tier.threshold_percent:
-                    return tier.threshold_percent, tier.amount
+                    return tier
         else:
             for tier in sorted(enabled, key=lambda t: t.threshold_percent, reverse=True):
                 if tier.threshold_percent > 0 and price_change_percent >= tier.threshold_percent:
-                    return tier.threshold_percent, tier.amount
-        return None, self.config.crypto_amount
+                    return tier
+        return None
+
+    def _match_tier(self, price_change_percent: float) -> Tuple[Optional[float], float]:
+        """Return (threshold_percent, amount) of the matching tier.
+
+        ``threshold_percent`` is None when no tier matched and the base amount
+        is used as fallback. Thin wrapper over :meth:`_match_tier_object` kept
+        for the existing call sites that only need threshold and amount.
+        """
+        tier = self._match_tier_object(price_change_percent)
+        if tier is None:
+            return None, self.config.crypto_amount
+        return tier.threshold_percent, tier.amount
 
     def resolve_buy_amount(self, current_price: float) -> float:
         """Return the crypto amount to buy for the current market conditions.
@@ -595,11 +604,31 @@ class KrakenDCA:
                 self._skip_buy(f"price {current_price:.2f} is above max_price {effective_max_price:.2f}", strategy)
                 return
 
+            # A dynamic tier can opt out of the monthly budget cap entirely.
+            # Resolve the matching tier here — before the budget checks — so
+            # its override flag is honoured by both budget checks below.
+            matched_tier: Optional[DynamicTier] = None
+            if strategy == "dynamic" and self.config.dynamic_dca_enabled:
+                reference_price = self.get_reference_price()
+                if reference_price > 0:
+                    change = (current_price - reference_price) / reference_price * 100.0
+                    matched_tier = self._match_tier_object(change)
+            tier_budget_override = (
+                matched_tier is not None
+                and matched_tier.override_monthly_budget
+                and self.config.max_monthly_amount is not None
+            )
+
             budget_overridden = (
                 over_budget_override and self.config.max_monthly_amount is not None
-            )
-            if budget_overridden:
+            ) or tier_budget_override
+            if over_budget_override and self.config.max_monthly_amount is not None:
                 print(f"{Colors.CYAN}Manual buy approved over monthly budget (one-time override).{Colors.RESET}")
+            elif tier_budget_override and matched_tier is not None:
+                print(
+                    f"{Colors.CYAN}Dynamic tier {matched_tier.threshold_percent:+.0f}% overrides the "
+                    f"monthly budget cap for this buy.{Colors.RESET}"
+                )
 
             if self.config.max_monthly_amount is not None and not budget_overridden:
                 monthly_spent = self.store.get_monthly_spent(self.config.trading_pair, self.config.deposit_day, self.config.buy_hour)
@@ -633,12 +662,8 @@ class KrakenDCA:
 
             # Record which dynamic tier triggered (for display as "Dynamic -5%").
             dynamic_tier: Optional[float] = None
-            if strategy == "dynamic" and self.config.dynamic_dca_enabled:
-                reference_price = self.get_reference_price()
-                if reference_price > 0:
-                    change = (current_price - reference_price) / reference_price * 100.0
-                    tier_threshold, _ = self._match_tier(change)
-                    dynamic_tier = tier_threshold
+            if matched_tier is not None:
+                dynamic_tier = matched_tier.threshold_percent
 
             if self.config.max_monthly_amount is not None and not budget_overridden:
                 monthly_spent = self.store.get_monthly_spent(self.config.trading_pair, self.config.deposit_day, self.config.buy_hour)
@@ -665,12 +690,19 @@ class KrakenDCA:
 
             if simulated:
                 print(f"{Colors.YELLOW}⚠ DRY RUN: skipped placing order (LIVE_TRADING_ENABLED is not true){Colors.RESET}")
+                dry_override_note = ""
+                if tier_budget_override and matched_tier is not None:
+                    dry_override_note = (
+                        f"\n⚠️ Budget override (tier {matched_tier.threshold_percent:+.0f}%): "
+                        f"buy exceeds the monthly budget by design and does not count toward it"
+                    )
                 self.notifier.send(
                     f"🔶 DRY RUN buy\n"
                     f"Order #{order_number}\n"
                     f"Amount: {buy_amount:.8f} BTC\n"
                     f"Price: {current_price:.2f} {fiat_currency}\n"
                     f"No real order was placed."
+                    f"{dry_override_note}"
                 )
                 self.store.add_transaction(
                     self.config.trading_pair,
@@ -681,6 +713,7 @@ class KrakenDCA:
                     simulated=True,
                     notes="Dry-run buy",
                     dynamic_tier=dynamic_tier,
+                    budget_override=tier_budget_override,
                 )
                 self._finish_cycle(cycle_time, strategy)
                 self.display_statistics(current_price)
@@ -698,9 +731,15 @@ class KrakenDCA:
                 if live_fiat < needed_fiat:
                     self.state.update(last_buy_failure_at=now_tz())
                     self._finish_cycle(cycle_time, strategy)
+                    tier_note = ""
+                    if tier_budget_override and matched_tier is not None:
+                        tier_note = (
+                            f" (tier {matched_tier.threshold_percent:+.0f}% budget override active — "
+                            f"buy skipped despite override)"
+                        )
                     self._skip_buy(
                         f"insufficient {fiat_currency} balance: need ~{needed_fiat:.2f} "
-                        f"(incl. fee), available {live_fiat:.2f}",
+                        f"(incl. fee), available {live_fiat:.2f}{tier_note}",
                         strategy,
                     )
                     return
@@ -712,12 +751,19 @@ class KrakenDCA:
             def _on_confirmed(attempt):
                 self._mark_cycle_executed(cycle_time, strategy)
                 print(f"{Colors.GREEN}✓ Order placed successfully{Colors.RESET}")
+                override_note = ""
+                if tier_budget_override and matched_tier is not None:
+                    override_note = (
+                        f"\n⚠️ Budget override (tier {matched_tier.threshold_percent:+.0f}%): "
+                        f"buy exceeds the monthly budget by design and does not count toward it"
+                    )
                 self.notifier.send(
                     f"✅ Buy order placed\n"
                     f"Order #{order_number}\n"
                     f"Amount: {buy_amount:.8f} BTC\n"
                     f"Price: {current_price:.2f} {fiat_currency}\n"
                     f"Total: {(buy_amount * current_price):.2f} {fiat_currency}"
+                    f"{override_note}"
                 )
                 self.display_statistics(current_price)
 
@@ -730,6 +776,7 @@ class KrakenDCA:
                 cycle_time=cycle_time,
                 dynamic_tier=dynamic_tier,
                 budget_overridden=budget_overridden,
+                budget_override=tier_budget_override,
                 on_confirmed=_on_confirmed,
             )
 

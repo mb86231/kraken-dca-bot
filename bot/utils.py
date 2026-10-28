@@ -14,7 +14,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 
-APP_VERSION = "1.4.5"
+APP_VERSION = "1.5.0"
 
 # Dashboard/bot display timezone. Change this if you want dates shown in a
 # different zone. UTC is used internally for storage and scheduling.

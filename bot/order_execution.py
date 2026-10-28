@@ -121,6 +121,7 @@ class OrderAttempt:
     acknowledged: bool = False
     dynamic_tier: float | None = None
     budget_overridden: bool = False
+    budget_override: bool = False
     created_at: str = field(default_factory=lambda: utc_now().isoformat())
     updated_at: str = field(default_factory=lambda: utc_now().isoformat())
     notes: str | None = None
@@ -244,6 +245,7 @@ class OrderExecutor:
         cycle_time: datetime | None = None,
         dynamic_tier: float | None = None,
         budget_overridden: bool = False,
+        budget_override: bool = False,
         on_confirmed: Callable[[OrderAttempt], None] | None = None,
     ) -> OrderAttempt:
         """Submit a single buy attempt.
@@ -252,7 +254,8 @@ class OrderExecutor:
         it is returned instead of creating a duplicate. ``budget_overridden``
         marks a one-time operator-approved buy that may exceed the monthly
         budget; the flag persists on the attempt so placement-time checks
-        honour the approval.
+        honour the approval. ``budget_override`` marks a tier-configured buy
+        that does not count toward the monthly budget at all.
         """
         cycle_id = _cycle_id(pair, strategy, cycle_time)
         attempt_number = 1
@@ -275,6 +278,7 @@ class OrderExecutor:
             userref=userref,
             dynamic_tier=dynamic_tier,
             budget_overridden=budget_overridden,
+            budget_override=budget_override,
         )
         self.attempt_store.save(attempt)
         return self._execute(attempt, on_confirmed=on_confirmed)
@@ -647,6 +651,7 @@ class OrderExecutor:
             simulated=attempt.simulated,
             notes=f"Order attempt {attempt.attempt_id}",
             dynamic_tier=attempt.dynamic_tier,
+            budget_override=attempt.budget_override,
         )
         attempt.state = OrderState.CONFIRMED.value
         attempt.final_outcome = "confirmed"
@@ -675,6 +680,7 @@ class OrderExecutor:
             simulated=attempt.simulated,
             notes=f"Reconciled / {reason} ({attempt.attempt_id})",
             dynamic_tier=attempt.dynamic_tier,
+            budget_override=attempt.budget_override,
         )
         attempt.state = OrderState.CONFIRMED.value
         attempt.final_outcome = f"confirmed via {reason}"

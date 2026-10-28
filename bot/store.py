@@ -31,6 +31,10 @@ class Transaction:
     # For dynamic-DCA orders: the tier threshold (%) that matched when the
     # order was placed, so the UI can show e.g. "Dynamic -5%".
     dynamic_tier: float | None = None
+    # True when the buy was placed by a dynamic tier with override_monthly_budget
+    # (or by the manual one-time "buy anyway" override): it bypassed the
+    # monthly budget and is excluded from monthly spend accounting.
+    budget_override: bool = False
 
     def __post_init__(self):
         if not self.id:
@@ -54,6 +58,7 @@ class Transaction:
             "id": "",
             "notes": "",
             "dynamic_tier": None,
+            "budget_override": False,
         }
         for key, default in defaults.items():
             data.setdefault(key, default)
@@ -110,6 +115,7 @@ class TransactionStore:
         simulated: bool = False,
         notes: str = "",
         dynamic_tier: float | None = None,
+        budget_override: bool = False,
     ) -> Transaction:
         """Add a new transaction and persist.
 
@@ -134,6 +140,7 @@ class TransactionStore:
             simulated=simulated,
             notes=notes,
             dynamic_tier=dynamic_tier,
+            budget_override=budget_override,
         )
 
         def _append(data):
@@ -179,7 +186,10 @@ class TransactionStore:
         """Return fiat spent in the current deposit cycle by real orders only.
 
         Simulated (dry-run) transactions are excluded so a test phase never
-        eats into the budget that live buys are checked against.
+        eats into the budget that live buys are checked against. Budget-override
+        buys (dynamic override tiers or the manual one-time "buy anyway") are
+        excluded as well: they are opportunistic reserve spends and must not
+        consume the regular monthly DCA budget.
         """
         now = utc_now()
         cycle_started = now.day > deposit_day or (now.day == deposit_day and now.hour >= buy_hour)
@@ -194,6 +204,7 @@ class TransactionStore:
             for tx in self.transactions
             if tx.trading_pair == trading_pair
             and not tx.simulated
+            and not tx.budget_override
             and datetime.fromisoformat(tx.date) >= period_start
         ]
         return sum(tx.amount * tx.price for tx in pair_txs)

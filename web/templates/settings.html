@@ -112,6 +112,7 @@
             <th>Amount</th>
             <th>≈ Value</th>
             <th>Enabled</th>
+            <th>Budget override</th>
             <th>Example</th>
             <th></th>
           </tr>
@@ -121,6 +122,11 @@
         </tbody>
       </table>
     </div>
+    <p class="alert alert-warning" id="tier-override-warning" style="display: none; margin-top: 0.75rem;">
+      ⚠️ At least one enabled tier overrides the monthly budget: buys matched by that tier ignore the
+      monthly budget limit, do not count toward it, and can drain the account fiat balance — for example
+      on a prolonged crash (reference: last buy) or on every further drop (reference: average buy).
+    </p>
     <div class="button-row" style="margin-top: 0.75rem;">
       <button type="button" class="btn btn-small btn-secondary" id="add-tier">+ Add Tier</button>
       <button type="button" class="btn btn-small btn-secondary" id="reset-tiers">Reset to Defaults</button>
@@ -727,6 +733,15 @@
     const enabledTd = document.createElement('td');
     enabledTd.appendChild(enabledInput);
 
+    const overrideInput = document.createElement('input');
+    overrideInput.type = 'checkbox';
+    overrideInput.className = 'tier-override';
+    overrideInput.dataset.key = 'override_monthly_budget';
+    overrideInput.checked = !!tier.override_monthly_budget;
+    overrideInput.title = 'Buys matched by this tier ignore the monthly budget limit and do not count toward it';
+    const overrideTd = document.createElement('td');
+    overrideTd.appendChild(overrideInput);
+
     const exampleTd = el('td', 'muted', tierExample(tier.threshold_percent));
 
     const removeBtn = el('button', 'btn btn-small btn-danger remove-tier', 'Remove');
@@ -738,15 +753,34 @@
     row.appendChild(amountTd);
     row.appendChild(valueTd);
     row.appendChild(enabledTd);
+    row.appendChild(overrideTd);
     row.appendChild(exampleTd);
     row.appendChild(removeTd);
 
     removeBtn.addEventListener('click', () => {
       row.remove();
+      updateTierOverrideWarning();
     });
     amountInput.addEventListener('input', () => updateTierValue(row));
+    overrideInput.addEventListener('change', updateTierOverrideWarning);
     updateTierValue(row);
     return row;
+  }
+
+  function updateTierOverrideWarning() {
+    const warning = document.getElementById('tier-override-warning');
+    if (!warning) return;
+    const rows = document.querySelectorAll('#dynamic-dca-tiers tbody tr');
+    let active = false;
+    for (const row of rows) {
+      const enabled = row.querySelector('.tier-enabled');
+      const override = row.querySelector('.tier-override');
+      if (enabled && enabled.checked && override && override.checked) {
+        active = true;
+        break;
+      }
+    }
+    warning.style.display = active ? '' : 'none';
   }
 
   function renderTiers(tiers) {
@@ -756,6 +790,7 @@
     for (const tier of sorted) {
       tbody.appendChild(createTierRow(tier));
     }
+    updateTierOverrideWarning();
   }
 
   function collectDynamicDCA() {
@@ -765,7 +800,13 @@
       const threshold = parseFloat(row.querySelector('.tier-threshold').value);
       const amount = parseFloat(row.querySelector('.tier-amount').value);
       const enabled = row.querySelector('.tier-enabled').checked;
-      tiers.push({ threshold_percent: threshold, amount: amount, enabled: enabled });
+      const override = row.querySelector('.tier-override').checked;
+      tiers.push({
+        threshold_percent: threshold,
+        amount: amount,
+        enabled: enabled,
+        override_monthly_budget: override,
+      });
     }
     return {
       enabled: document.getElementById('dynamic_dca_enabled').checked,
@@ -777,7 +818,7 @@
 
   document.getElementById('add-tier').addEventListener('click', () => {
     const tbody = document.querySelector('#dynamic-dca-tiers tbody');
-    tbody.appendChild(createTierRow({ threshold_percent: 0.0, amount: 0.0005, enabled: true }));
+    tbody.appendChild(createTierRow({ threshold_percent: 0.0, amount: 0.0005, enabled: true, override_monthly_budget: false }));
   });
 
   document.getElementById('crypto_amount').addEventListener('input', updateBaseAmountHint);

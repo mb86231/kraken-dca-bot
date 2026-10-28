@@ -107,7 +107,8 @@ the price drops below your reference, smaller buys or a full skip when it rises.
   buy of any strategy, so a scheduled buy also starts the cooldown.
 - `tiers`: each tier has a `threshold_percent` (price change from reference)
   and an `amount` to buy when that threshold is reached. `amount: 0` means
-  skip the buy entirely.
+  skip the buy entirely. Each tier also has an optional
+  `override_monthly_budget` flag (default `false`, see below).
 
 #### How a buy amount is resolved
 
@@ -137,6 +138,50 @@ scale the set proportionally for other assets or budgets):
 | > −10 % … ≤ −5 % | 0.001 | Crossed the −5 % mark |
 | > −20 % … ≤ −10 % | 0.0015 | Strong dip |
 | ≤ −20 % | 0.002 | Deepest tier — crash protection, never the smaller base amount |
+
+#### Per-tier budget override
+
+Each tier accepts an optional `override_monthly_budget` flag (default
+`false`). When set to `true`, a buy matched by that tier:
+
+- ignores the `max_monthly_amount` budget limit — the buy goes through even
+  when the monthly budget is already exhausted,
+- does **not** count toward the monthly budget (it is excluded from
+  `get_monthly_spent`, so the remaining budget for scheduled buys is
+  untouched),
+- is labelled `dynamic -20 % · budget override` in the transactions list,
+  and the Telegram notification names the override explicitly.
+
+Typical use: crash protection on the deepest dip tier, where you want the
+bot to keep buying through a prolonged crash even though the regular monthly
+budget is spent.
+
+> **Risk warning**: the override lifts the budget cap, not the laws of your
+> bank account. The buys are still charged against your Kraken fiat balance.
+> With `reference: "last_buy"` an ongoing crash re-triggers the tier after
+> every cooldown window; with `reference: "avg_buy"` every further drop
+> against the falling average can trigger again — in a long downturn this
+> can drain the fiat balance well beyond the configured monthly budget.
+> Enable it only on tiers you deliberately want to act as uncapped crash
+> buys.
+>
+> The override never bypasses the balance pre-check: if the account cannot
+> fund the buy, it is skipped with an explicit alert (and the failure starts
+> the dynamic cooldown, so a failing setup cannot fire one alert per poll).
+> It also only applies to *dynamic* buys matched by that tier — scheduled and
+> manual buys are unaffected, and the manual "buy anyway" one-shot override
+> keeps its existing semantics (the buy counts toward the budget).
+
+Example — the deepest tier buys through an exhausted budget:
+
+```json
+{
+  "threshold_percent": -20.0,
+  "amount": 0.002,
+  "enabled": true,
+  "override_monthly_budget": true
+}
+```
 
 #### Where the tiers apply
 
