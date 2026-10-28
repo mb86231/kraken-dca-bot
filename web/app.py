@@ -10,7 +10,12 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -146,6 +151,15 @@ app.include_router(monitoring_router, prefix="/api")
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, username: str = Depends(require_auth)):
     return RedirectResponse(url="/dashboard")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    # /favicon.ico is exempt from auth in web/security.py; serve the real
+    # icon so browser tabs get the DCA-Bot glyph instead of a 404.
+    return FileResponse(
+        base_dir / "static" / "icons" / "icon-32.png", media_type="image/png"
+    )
 
 
 @app.get("/login", response_class=HTMLResponse)

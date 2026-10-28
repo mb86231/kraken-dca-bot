@@ -233,6 +233,24 @@ and tunnel when needed:
 ssh -L 8000:127.0.0.1:8000 user@bot-host
 ```
 
+## Home Screen App (Mobile)
+
+The dashboard ships a web app manifest and icons, so you can add it to your
+phone's home screen and use it like a standalone app (own window, no browser
+chrome):
+
+- **iOS (Safari):** open the dashboard, tap the Share button → "Add to Home
+  Screen". This works over plain HTTP on a LAN too. iOS stores home-screen-app
+  cookies **separately from Safari**, so you have to log in once inside the
+  app — after that the session persists like in the browser.
+- **Android (Chrome):** open the dashboard and use "Add to Home screen" /
+  "Install app". Chrome's install prompt requires HTTPS; over plain HTTP the
+  manifest still provides name and icon, but Chrome falls back to a
+  shortcut-style bookmark.
+
+No service worker / offline mode is provided on purpose — the dashboard shows
+live data and would be useless offline.
+
 ## Important Notes
 
 - The dashboard shares the bot process. Web failures are isolated, but the dashboard is optional for this reason.

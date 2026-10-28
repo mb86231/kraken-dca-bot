@@ -17,6 +17,11 @@ warn_unused_configs = true
 module = "jose.*"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# Pillow ships no type stubs; scripts/generate_icons.py is a dev-only tool.
+module = ["PIL", "PIL.*"]
+ignore_missing_imports = true
+
 [tool.coverage.run]
 source = ["bot", "web", "scripts"]
 branch = true

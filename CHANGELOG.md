@@ -8,6 +8,29 @@ Releases are tagged `v*` and published as container images to
 `ghcr.io/mb86231/kraken-dca-bot:<tag>` (plus `:latest`). To update a running
 installation, see **Updates** in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
+## [1.4.4] — 2026-10-28
+
+### Added
+
+- **Home-screen app support** (issue #19): the dashboard now ships a web app
+  manifest and matching icons, so you can add it to your phone's home screen
+  and use it like a standalone app — own window, proper icon, no browser
+  chrome. iOS is supported via `apple-touch-icon` and standalone meta tags
+  (works over plain HTTP on a LAN); Android/Chrome install prompts require
+  HTTPS. The manifest and icons are served without a session, as required for
+  home-screen install, and no service worker is used on purpose (the dashboard
+  shows live data and would be useless offline). Icons can be regenerated or
+  restyled with `scripts/generate_icons.py`. See **Home Screen App (Mobile)**
+  in [`docs/WEB_DASHBOARD.md`](docs/WEB_DASHBOARD.md).
+- `/favicon.ico` is now served properly (previously a 404, so browser tabs
+  showed a generic or missing icon).
+
+### Tests
+
+- New `tests/test_pwa.py`: manifest and icons reachable without a login
+  session, favicon route, and home-screen head tags on both the login page
+  and the dashboard.
+
 ## [1.4.3] — 2026-10-27
 
 ### Fixed
