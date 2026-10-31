@@ -34,7 +34,9 @@ class _FakeAPI(DemoKrakenAPI):
     def get_ticker(self, pair: str) -> float:
         return self.price
 
-    def get_balance(self) -> dict[str, float]:
+    def get_balance(
+        self, timeout: float = 30, max_retries: int = 3
+    ) -> dict[str, float]:
         return {"ZCHF": 100000.0, "CHF": 100000.0}
 
     def get_asset_pair_info(self, pair: str, timeout: float = 30) -> dict[str, Any]:

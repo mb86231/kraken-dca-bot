@@ -45,6 +45,25 @@ DEFAULT_BRIEFING_SECTIONS: dict[str, bool] = {
 # fetched successfully; the bot fetches them, the AI only narrates.
 NARRATIVE_FOCUS_OPTIONS = ("market", "portfolio", "plan", "news")
 DEFAULT_NARRATIVE_FOCUS = ("market", "portfolio", "plan")
+
+
+def _optional_limit(value) -> Optional[float]:
+    """Normalise a user-entered limit to ``None`` (= disabled).
+
+    The settings UI labels ``max_price`` / ``max_monthly_amount`` as
+    "0 to disable". Storing ``0`` as a real value would make every buy fail
+    the ``limit is not None`` gates (issue #21), so anything that is not a
+    positive number — missing, empty string, zero, negative — means "no
+    limit". Existing config.json files that already store ``0`` self-heal
+    on the next load.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        limit = float(value)
+    except (TypeError, ValueError):
+        return None
+    return limit if limit > 0 else None
 CUSTOM_PROMPT_MAX_CHARS = 2000
 NEWS_MAX_FEEDS = 5
 DEFAULT_NEWS_FEEDS = (
@@ -175,10 +194,8 @@ class Config:
         self.update_check_interval_hours = int(
             config.get("update_check_interval_hours", 24)
         )
-        max_price_raw = config.get("max_price")
-        self.max_price = float(max_price_raw) if max_price_raw is not None else None
-        max_monthly_raw = config.get("max_monthly_amount")
-        self.max_monthly_amount = float(max_monthly_raw) if max_monthly_raw is not None else None
+        self.max_price = _optional_limit(config.get("max_price"))
+        self.max_monthly_amount = _optional_limit(config.get("max_monthly_amount"))
         dca_end_raw = config.get("dca_end_date")
         self.dca_end_date = datetime.fromisoformat(dca_end_raw).astimezone() if dca_end_raw else None
 

@@ -156,7 +156,16 @@
     const red = getComputedStyle(document.documentElement).getPropertyValue('--red').trim() || '#c43030';
 
     if (name === 'pl_over_time') {
-      return { border: red, bg: 'rgba(196, 48, 48, 0.10)' };
+      // Coloured per segment: green above zero, red below, neutral while
+      // crossing — matching the KPI card colouring (issue #21).
+      return {
+        border: red, bg: 'rgba(196, 48, 48, 0.10)',
+        segment: {
+          positive: { border: green, bg: 'rgba(23, 122, 72, 0.10)' },
+          negative: { border: red, bg: 'rgba(196, 48, 48, 0.10)' },
+          crossing: { border: accent, bg: 'rgba(201, 125, 10, 0.10)' },
+        },
+      };
     }
     if (name === 'invested_vs_value') {
       return { border: [accent, green], bg: ['rgba(201, 125, 10, 0.10)', 'rgba(23, 122, 72, 0.10)'] };
@@ -197,17 +206,31 @@
       type: 'line',
       data: {
         labels: data.labels,
-        datasets: data.datasets.map((ds, i) => ({
-          label: ds.label,
-          data: ds.data,
-          borderColor: Array.isArray(colors.border) ? colors.border[i] : colors.border,
-          backgroundColor: Array.isArray(colors.bg) ? colors.bg[i] : colors.bg,
-          borderWidth: 2,
-          tension: 0.3,
-          fill: true,
-          pointRadius: 2,
-          pointHoverRadius: 5,
-        })),
+        datasets: data.datasets.map((ds, i) => {
+          const dataset = {
+            label: ds.label,
+            data: ds.data,
+            borderColor: Array.isArray(colors.border) ? colors.border[i] : colors.border,
+            backgroundColor: Array.isArray(colors.bg) ? colors.bg[i] : colors.bg,
+            borderWidth: 2,
+            tension: 0.3,
+            fill: true,
+            pointRadius: 2,
+            pointHoverRadius: 5,
+          };
+          if (colors.segment) {
+            const pick = (p0, p1) => {
+              if (p0 >= 0 && p1 >= 0) return colors.segment.positive;
+              if (p0 < 0 && p1 < 0) return colors.segment.negative;
+              return colors.segment.crossing;
+            };
+            dataset.segment = {
+              borderColor: (seg) => pick(seg.p0.parsed.y, seg.p1.parsed.y).border,
+              backgroundColor: (seg) => pick(seg.p0.parsed.y, seg.p1.parsed.y).bg,
+            };
+          }
+          return dataset;
+        }),
       },
       options: {
         responsive: true,

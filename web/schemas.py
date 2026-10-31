@@ -142,6 +142,22 @@ class SettingsUpdate(BaseModel):
     def uppercase_pair(cls, v):
         return v.upper() if v else v
 
+    @field_validator("max_price", "max_monthly_amount", mode="before")
+    @classmethod
+    def zero_means_disabled(cls, v):
+        """Normalise "0 to disable" (and empty/negative) to None.
+
+        The strategy form labels both fields "0 to disable"; persisting 0
+        would store a real limit of 0 and block every buy (issue #21).
+        """
+        if v is None or v == "":
+            return None
+        try:
+            limit = float(v)
+        except (TypeError, ValueError):
+            return v  # let pydantic raise its own validation error
+        return limit if limit > 0 else None
+
     @field_validator("mode")
     @classmethod
     def lowercase_mode(cls, v):

@@ -16,6 +16,7 @@ from typing import Any, Optional
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from slowapi.util import get_remote_address
+from starlette.concurrency import run_in_threadpool
 
 from bot.api_client import KrakenAPI
 from bot.config import Config
@@ -87,12 +88,22 @@ class _BalanceCache:
     and makes the balance display drop to zero while the real error is hidden. This
     cache shares one result across all tabs and limits private API calls to at most
     one per ``TTL_SECONDS``.
+
+    Stale-while-revalidate with single-flight refresh: the Kraken call happens
+    *outside* the state lock, and only one thread may refresh at a time. When a
+    refresh is already in flight, other readers are served the previous value
+    immediately instead of queueing behind a slow or rate-limited Kraken (which
+    could otherwise hold every dashboard request for the whole 30 s timeout plus
+    backoff — issue #21). Dashboard reads fail fast (short timeout, no retries);
+    the trading loop uses the real API client and is unaffected.
     """
 
     TTL_SECONDS = 60
+    DASHBOARD_TIMEOUT_SECONDS = 5
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        self._refresh_lock = threading.Lock()
         self._client: KrakenAPI | DemoKrakenAPI | None = None
         self._client_key: str | None = None
         self._client_secret: str | None = None
@@ -100,6 +111,13 @@ class _BalanceCache:
         self._available_fiat: float | None = None
         self._fiat_currency = ""
         self._error: str | None = None
+
+    def _fresh(self, fiat_currency: str, now: float) -> bool:
+        return (
+            self._fiat_currency == fiat_currency
+            and self._error is None
+            and now - self._timestamp < self.TTL_SECONDS
+        )
 
     def get(
         self,
@@ -109,15 +127,23 @@ class _BalanceCache:
         fiat_currency = _quote_currency(config.trading_pair)
         with self._lock:
             now = time.time()
-            if (
-                self._fiat_currency == fiat_currency
-                and self._error is None
-                and now - self._timestamp < self.TTL_SECONDS
-            ):
+            if self._fresh(fiat_currency, now):
                 return self._available_fiat, self._fiat_currency, None
+            stale = (self._available_fiat, self._fiat_currency, self._error)
 
-            # Refresh the cache.
-            self._fiat_currency = fiat_currency
+        # Single-flight: only one thread performs the refresh; concurrent
+        # readers keep serving the stale value until it finishes.
+        if not self._refresh_lock.acquire(blocking=False):
+            return stale
+
+        try:
+            with self._lock:
+                now = time.time()
+                if self._fresh(fiat_currency, now):
+                    return self._available_fiat, self._fiat_currency, None
+
+            available_fiat: float | None = None
+            error: str | None = None
             try:
                 if is_demo_mode():
                     balance: dict[str, float] = {
@@ -136,15 +162,22 @@ class _BalanceCache:
                     ):
                         self._client = KrakenAPI(key, secret)
                         self._client_key, self._client_secret = key, secret
-                    balance = self._client.get_balance()
+                    balance = self._client.get_balance(
+                        timeout=self.DASHBOARD_TIMEOUT_SECONDS, max_retries=1
+                    )
                 available = balance.get(f"Z{fiat_currency}", balance.get(fiat_currency, 0.0))
-                self._available_fiat = float(available)
-                self._error = None
+                available_fiat = float(available)
             except Exception as e:
-                self._available_fiat = None
-                self._error = redact_sensitive(str(e))
-            self._timestamp = now
-            return self._available_fiat, self._fiat_currency, self._error
+                error = redact_sensitive(str(e))
+
+            with self._lock:
+                self._fiat_currency = fiat_currency
+                self._available_fiat = available_fiat
+                self._error = error
+                self._timestamp = time.time()
+                return self._available_fiat, self._fiat_currency, self._error
+        finally:
+            self._refresh_lock.release()
 
 
 _balance_cache = _BalanceCache()
@@ -346,12 +379,18 @@ async def api_preflight_run(
     username: str = Depends(require_auth),
     _rate_limit=Depends(api_rate_limit),
 ):
-    """Re-run the production preflight and persist the result."""
+    """Re-run the production preflight and persist the result.
+
+    The preflight issues several blocking Kraken calls (30 s timeout, retry
+    backoff); running it inline would freeze the event loop and hang every
+    other dashboard request until it finishes. It runs in the threadpool
+    instead (issue #21).
+    """
     api: KrakenAPI | DemoKrakenAPI | None = None
     if not is_demo_mode():
         api = KrakenAPI(config.api_key, config.api_secret)
     preflight = ProductionPreflight(config, api=api, state=state, overrides=overrides)
-    result = preflight.run()
+    result = await run_in_threadpool(preflight.run)
     write_preflight_result(PREFLIGHT_RESULT_FILE, result)
     return result.to_dict()
 
@@ -803,6 +842,10 @@ def _market_valuation_series(
     between buy-time valuations (the previous behaviour valued each point at
     its own trade price, which hid everything that happened between buys).
 
+    ``txns`` must be the *complete* transaction list, not a range-filtered
+    one: holdings accumulated before the range start are carried into the
+    series so short ranges don't start from zero (issue #21).
+
     Returns None when market data is unavailable — the caller falls back to
     the trade-price valuation so the charts still render.
     """
@@ -837,6 +880,20 @@ def _market_valuation_series(
     cum_amount = 0.0
     cum_spent = 0.0
     buy_index = 0
+    # Holdings bought before the selected range still count: the series
+    # starts from the full position instead of from zero, so every range's
+    # end value matches the KPI card (issue #21).
+    first_candle_time = datetime.fromtimestamp(
+        int(min(candles, key=lambda c: c[0])[0]), tz=timezone.utc
+    )
+    while buy_index < len(buys) and (
+        datetime.fromisoformat(buys[buy_index].date) <= first_candle_time
+    ):
+        cum_amount += buys[buy_index].amount
+        cum_spent += buys[buy_index].amount * buys[buy_index].price
+        buy_index += 1
+    if buy_index == 0:
+        return None  # no holdings at all — nothing to value
     for candle in sorted(candles, key=lambda c: c[0]):
         candle_time = datetime.fromtimestamp(int(candle[0]), tz=timezone.utc)
         while buy_index < len(buys) and (
@@ -845,8 +902,6 @@ def _market_valuation_series(
             cum_amount += buys[buy_index].amount
             cum_spent += buys[buy_index].amount * buys[buy_index].price
             buy_index += 1
-        if buy_index == 0:
-            continue  # no holdings yet — nothing to value
         close = float(candle[4])
         labels.append(format_datetime(candle_time) or "")
         invested.append(round(cum_spent, 2))
@@ -890,7 +945,7 @@ def api_charts(
 
     if name == "invested_vs_value":
         market_series = _market_valuation_series(
-            pair, filtered, range, config.api_key, config.api_secret
+            pair, txns, range, config.api_key, config.api_secret
         )
         if market_series is not None:
             return {
@@ -923,7 +978,7 @@ def api_charts(
 
     if name == "pl_over_time":
         market_series = _market_valuation_series(
-            pair, filtered, range, config.api_key, config.api_secret
+            pair, txns, range, config.api_key, config.api_secret
         )
         if market_series is not None:
             return {

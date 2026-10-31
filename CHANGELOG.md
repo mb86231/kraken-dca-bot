@@ -8,6 +8,42 @@ Releases are tagged `v*` and published as container images to
 `ghcr.io/mb86231/kraken-dca-bot:<tag>` (plus `:latest`). To update a running
 installation, see **Updates** in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
+## [1.5.1] — 2026-10-31
+
+### Fixed
+
+- **"0 to disable" limits blocked every buy** (issue #21): the settings form
+  labels *max price* / *max monthly amount* "0 to disable", but a saved `0`
+  was stored as a real limit of zero, so every buy was rejected until the
+  values were cleared by hand. Zero, negative, empty and non-numeric values
+  now normalize to "no limit" on save and on load — existing config.json
+  files that already contain `0` self-heal on the next start.
+- **Re-running the preflight froze the whole dashboard** (issue #21):
+  `POST /api/preflight/run` executed the blocking Kraken checks inline on
+  the event loop, stalling every other dashboard request for the full
+  timeout plus retry backoff. The run now executes in the threadpool and
+  the UI stays responsive while it completes.
+- **Dashboard balance reads queued behind a slow Kraken** (issue #21): the
+  cached balance refreshed while holding the cache lock, so concurrent
+  dashboard readers waited up to the 30 s timeout plus backoff. The cache
+  now refreshes outside the lock with single-flight semantics — readers
+  keep getting the previous value until the refresh finishes — and
+  dashboard reads fail fast (5 s timeout, no retries). The trading loop is
+  unaffected.
+- **Monthly budget check crashed near month end** (issue #21):
+  `get_monthly_spent` raised "day is out of range for month" when the
+  configured deposit day does not exist in the previous month (e.g. the
+  31st after a 30-day month), taking down every budget check on those
+  days. The cycle start now clamps to the previous month's last day.
+- **Performance range charts ignored earlier holdings** (issue #21): the
+  7d/30d/90d invested/value/P&L charts were computed from only the
+  transactions inside the selected range, so they started at zero and
+  their end value disagreed with the KPI cards. Holdings bought before the
+  range are now carried in, so every range ends at the full position value.
+- **Unrealized P/L chart was always red** (issue #21): the chart now
+  colours each segment green above zero, red below, and neutral while
+  crossing — matching the KPI card.
+
 ## [1.5.0] — 2026-10-28
 
 ### Added

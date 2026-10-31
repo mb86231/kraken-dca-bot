@@ -97,7 +97,11 @@ class DemoKrakenAPI:
                     break
         return self._synthetic_price()
 
-    def get_balance(self) -> Dict[str, float]:
+    def get_balance(
+        self, timeout: float = 30, max_retries: int = 3
+    ) -> Dict[str, float]:
+        # timeout/max_retries mirror KrakenAPI so dashboard call sites can
+        # pass them uniformly; the fake answers instantly anyway.
         return dict(self._balance)
 
     def get_asset_pair_info(

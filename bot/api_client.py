@@ -177,9 +177,18 @@ class KrakenAPI:
 
         return float(result[pair]["c"][0])  # Current price
 
-    def get_balance(self) -> Dict[str, float]:
-        """Get account balance"""
-        result = self._api_request("/0/private/Balance", private=True)
+    def get_balance(
+        self, timeout: float = 30, max_retries: int = 3
+    ) -> Dict[str, float]:
+        """Get account balance.
+
+        ``timeout``/``max_retries`` allow dashboard call sites to fail fast
+        when Kraken is slow or rate-limited instead of queueing the UI
+        behind the full retry/backoff ladder (issue #21).
+        """
+        result = self._api_request(
+            "/0/private/Balance", private=True, timeout=timeout, max_retries=max_retries
+        )
         return {k: float(v) for k, v in result.items()}
 
     def get_ohlc(self, pair: str, interval: int = 60, since: Optional[int] = None) -> list[list[float]]:

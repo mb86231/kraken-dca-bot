@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -198,7 +199,17 @@ class TransactionStore:
         else:
             first_of_month = now.replace(day=1)
             prev_month = first_of_month - timedelta(days=1)
-            period_start = prev_month.replace(day=deposit_day, hour=buy_hour, minute=0, second=0, microsecond=0)
+            # Months without the configured day (e.g. deposit_day=31 and the
+            # previous month has 30) clamp to its last day instead of raising
+            # "day is out of range for month" (issue #21).
+            last_day = calendar.monthrange(prev_month.year, prev_month.month)[1]
+            period_start = prev_month.replace(
+                day=min(deposit_day, last_day),
+                hour=buy_hour,
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
         pair_txs = [
             tx
             for tx in self.transactions
