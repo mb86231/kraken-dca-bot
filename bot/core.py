@@ -41,6 +41,11 @@ MIN_ORDER_CRYPTO_AMOUNT_DEMO = 0.00001
 # a weekend restart or delayed deposit without being overly aggressive.
 CYCLE_GRACE_HOURS = 48
 
+# A deposit detected within this many hours of the deposit day triggers the
+# late-deposit warning (issue #22): the balance will be spent within this
+# short window instead of being spread over a full cycle.
+DEPOSIT_LATE_WARNING_HOURS = 24.0
+
 
 def _clamp_day_to_month(year: int, month: int, day: int) -> int:
     """Clamp ``day`` to the last valid day of the given month.
@@ -453,6 +458,26 @@ class KrakenDCA:
         """Persist the cycle time once a scheduled buy has actually been recorded."""
         if strategy == "scheduled" and cycle_time is not None:
             self.state.update(last_cycle_at=cycle_time)
+
+    def _warn_late_deposit(self, remaining_hours: float, max_buys: int) -> None:
+        """Log/Telegram/alert when a deposit lands close to the deposit day.
+
+        The whole balance is spread over the time remaining until the deposit
+        day, so a deposit arriving in the last hours of a cycle is spent
+        within that window — warn instead of surprising the operator (and
+        point at ``max_monthly_amount`` as the safeguard, issue #22).
+        """
+        if not (0 < remaining_hours <= DEPOSIT_LATE_WARNING_HOURS and max_buys > 0):
+            return
+        interval = remaining_hours / max_buys
+        warning = (
+            f"Deposit detected only {remaining_hours:.1f} h before the deposit day — "
+            f"{max_buys} buy(s) will be placed within this window (~every {interval:.1f} h). "
+            f"Set max_monthly_amount to cap spending from late deposits."
+        )
+        print(f"{Colors.YELLOW}{Colors.BOLD}Warning: {warning}{Colors.RESET}\n")
+        self.notifier.send(f"⚠️ {warning}")
+        create_alert(f"Late deposit: {warning}", "warning")
 
     def calculate_next_buy(self, current_schedule: Optional[datetime] = None) -> Tuple[datetime, float, int, int]:
         """Calculate next buy time based on mode.
@@ -1186,6 +1211,14 @@ class KrakenDCA:
                                 self.state.update(next_cycle_at=next_buy_time, estimated_buys=max_buys)
                                 formatted_time = next_buy_time.strftime("%Y-%m-%d %H:%M:%S %Z")
                                 print(f"{Colors.BOLD}Recalculated next buy: {Colors.CYAN}{formatted_time}{Colors.RESET}\n")
+                                # Late-deposit warning (issue #22): the whole
+                                # balance is spread over the time left until
+                                # the deposit day, so a deposit arriving in
+                                # the last hours of a cycle is spent almost
+                                # immediately — say so instead of letting it
+                                # come as a surprise at night.
+                                if self.config.mode == "recurring":
+                                    self._warn_late_deposit(remaining_hours, max_buys)
 
                         if self.config.dynamic_dca_enabled:
                             print(f"[{now.strftime('%H:%M:%S')}] Price: {current_price:.2f} | "

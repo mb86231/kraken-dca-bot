@@ -65,14 +65,14 @@ The bot uses two separate sources of configuration:
 |-------|------|----------|-------------|
 | `mode` | `"recurring"` or `"lump_sum"` | yes | DCA strategy mode. |
 | `trading_pair` | string | yes | Kraken trading pair, e.g. `XBTCHF`, `XXBTZUSD`. |
-| `deposit_day` | int 1–28 | recurring | Day of month the cycle resets and the scheduled buy fires. |
+| `deposit_day` | int 1–28 | recurring | Marks the **end of the current cycle**: the available balance is spread evenly across buys until this day at `buy_hour`. It is not "the day the scheduled buy fires" — buys happen continuously *before* it. Set it to the day your deposit usually arrives so each deposit is spread over a full cycle. |
 | `buy_hour` | int 0–23 | yes | Hour of day used as the buy/cycle reference. |
 | `crypto_amount` | float > 0 | yes | Crypto amount per single buy order. Must meet Kraken's minimum for the pair. |
 | `dip_threshold_percent` | float 0–100 | yes | Extra buy when price drops this percent below the last buy price. |
 | `dip_buy_cooldown_hours` | float ≥ 0 | yes | Minimum hours between two consecutive dip buys. |
 | `poll_interval_seconds` | int ≥ 60 | yes | How often the bot checks price and balance. |
 | `max_price` | float or `null` | no | Skip buys when price is above this value. |
-| `max_monthly_amount` | float or `null` | no | Maximum fiat to spend per cycle/month. |
+| `max_monthly_amount` | float or `null` | no | Maximum fiat to spend per cycle/month. Also the safeguard against irregular timing: whatever remains of this budget is what a late deposit can spend before the cycle ends. |
 | `dca_end_date` | ISO date `"YYYY-MM-DD"` or `null` | lump_sum | Last day buys are allowed. Must be in the future. |
 | `dynamic_dca` | object | no | Dynamic DCA tiers. See below. |
 

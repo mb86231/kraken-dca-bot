@@ -96,6 +96,16 @@ See [`INSTALL.md`](INSTALL.md) for the full installation guide and [`docs/config
 
 **Recurring mode.** The bot reads your available fiat balance, divides it by the per-buy amount, and spaces the buys evenly until the next deposit day at your configured hour. Each buy recalculates the schedule, so deposits and price movements are handled automatically.
 
+> **Timing matters.** The whole available balance is always spread over the time
+> *remaining until the next deposit day* — not over a fixed month. A deposit
+> that arrives shortly before the deposit day is therefore spent within hours,
+> not weeks (e.g. a deposit 10 h before the deposit day with a small balance
+> can mean a buy every few minutes until the cycle ends). Set `deposit_day` to
+> the day your money usually arrives (and deposit right after it), so each
+> deposit is spread over a full cycle. For irregular or one-off top-ups
+> (card / Apple Pay), set `max_monthly_amount` — it caps what a cycle can
+> spend regardless of when the money arrives.
+
 **Lump-sum mode.** You deposit a fixed amount once; the bot spreads buys evenly between now and `dca_end_date`.
 
 **Dynamic DCA.** When enabled, every buy (scheduled or triggered) picks its size from a tier table based on the price change since your last (or average) buy — e.g. flat market → base amount, −5 % → 1.5×, −20 % → 3×, +10 % → skip. The legacy fixed-percentage dip buy is disabled in favor of tiers. A configurable cooldown prevents over-buying during a crash.

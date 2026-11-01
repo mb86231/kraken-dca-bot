@@ -8,6 +8,34 @@ Releases are tagged `v*` and published as container images to
 `ghcr.io/mb86231/kraken-dca-bot:<tag>` (plus `:latest`). To update a running
 installation, see **Updates** in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
+## [1.5.2] — 2026-11-01
+
+### Added
+
+- **Late-deposit warning** (issue #22): the whole available balance is always
+  spread over the time remaining until the next deposit day, so a deposit
+  arriving in the last hours of a cycle is spent within that window. When a
+  deposit is detected less than 24 h before the deposit day, the bot now
+  prints a warning, sends a Telegram notification, and raises a dashboard
+  alert naming the number of buys and their interval (plus a hint at
+  `max_monthly_amount` as the cap for late deposits). Documentation now
+  also explains the deposit-timing effect (README, operations,
+  configuration reference).
+
+### Fixed
+
+- **Alert flood during Kraken degradation**: when Kraken intermittently
+  answers public read endpoints (notably Ticker) with the transient
+  `EGeneral:No data` error — observed live on 2026-10-29/30 — the bot
+  created a new unacknowledged alert on every poll cycle, burying the
+  alert list. Two changes: read retries for `EGeneral:No data` now use a
+  fixed 30 s backoff instead of escalating per cycle, and identical,
+  still-unacknowledged alerts are deduplicated within a 15-minute window
+  (the existing entry is refreshed in place; an acknowledged alert never
+  suppresses a recurrence). Order submission is unaffected — it still
+  retries only rate-limit rejections and surfaces `EGeneral:No data`
+  immediately for reconciliation.
+
 ## [1.5.1] — 2026-10-31
 
 ### Fixed

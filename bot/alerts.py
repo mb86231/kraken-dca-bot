@@ -13,6 +13,12 @@ from bot.utils import atomic_write_json, safe_load_json
 
 ALERTS_PATH = Path("data/alerts.json")
 
+# An identical, still-unacknowledged alert younger than this is treated as a
+# repeat of an ongoing condition: the existing alert is refreshed in place
+# instead of stacking a new entry every poll cycle (transient API errors used
+# to flood the alert list during multi-minute upstream degradations).
+ALERT_DEDUPE_WINDOW_SECONDS = 900
+
 # Optional AI explainer hook (story A3). Set via set_explainer_hook(); the
 # callable receives the newly created alert dict and must be fire-and-
 # forget — create_alert never blocks on it and never propagates its errors.
@@ -37,14 +43,37 @@ def save_alerts(alerts: list[dict[str, Any]]) -> None:
 
 def create_alert(message: str, severity: str = "warning", source: str = "bot") -> dict[str, Any]:
     alerts = load_alerts()
+    now = datetime.now(timezone.utc)
     alert = {
         "id": f"alert-{uuid.uuid4().hex[:8]}",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": now.isoformat(),
         "message": message,
         "severity": severity,
         "source": source,
         "acknowledged": False,
     }
+    # Dedupe: when the most recent alert is identical (message/severity/source),
+    # still unacknowledged and younger than the dedupe window, refresh it in
+    # place instead of stacking a new entry every poll cycle — transient API
+    # errors used to flood the list during multi-minute upstream degradations.
+    # An acknowledged newest alert never suppresses: the condition fired again
+    # after the operator cleared it, so it deserves a fresh alert.
+    if alerts:
+        last = alerts[-1]
+        if (
+            not last.get("acknowledged")
+            and last.get("message") == message
+            and last.get("severity") == severity
+            and last.get("source") == source
+        ):
+            try:
+                age = (now - datetime.fromisoformat(last["timestamp"])).total_seconds()
+            except (KeyError, ValueError):
+                age = ALERT_DEDUPE_WINDOW_SECONDS + 1
+            if age < ALERT_DEDUPE_WINDOW_SECONDS:
+                last["timestamp"] = now.isoformat()
+                save_alerts(alerts)
+                return last
     alerts.append(alert)
     save_alerts(alerts)
     if _explainer_hook is not None:

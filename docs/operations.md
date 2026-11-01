@@ -16,7 +16,7 @@ The **crypto-agent** is a self-hosted, containerized Dollar-Cost Averaging (DCA)
 
 ### What it does
 
-- **Recurring DCA**: Spreads buys evenly between now and the next monthly deposit day.
+- **Recurring DCA**: Spreads buys evenly between now and the next monthly deposit day. Note that *the whole available balance* is spread over the time remaining until that day: a deposit arriving shortly before the deposit day is spent within hours, not over the coming month. Set `deposit_day` to the day your money usually arrives, and use `max_monthly_amount` to cap spending from irregular one-off top-ups.
 - **Lump-sum DCA**: Spreads buys evenly until a configured end date (`mode: lump_sum`).
 - **Dip buying**: Places extra buys when the price drops a configured percentage below the last buy price.
 - **Deposit detection**: Recalculates the buy schedule when new fiat balance arrives.

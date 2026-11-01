@@ -20,6 +20,11 @@ from typing import Any, Callable, Dict, Optional
 # counter room to recover without extending the retry loop forever.
 RATE_LIMIT_BACKOFF_SECONDS = 20
 
+# How long to back off when Kraken answers with EGeneral:No data on a public
+# read endpoint — a transient degradation signal that usually resolves within
+# a minute; one patient retry beats an alert every poll cycle.
+EMPTY_RESULT_BACKOFF_SECONDS = 30
+
 # Default user-agent so Kraken can identify the request and so the request matches
 # the guidance in the API docs.
 _USER_AGENT = (
@@ -88,6 +93,14 @@ class KrakenAPI:
                 or (isinstance(exc, urllib.error.HTTPError) and exc.code == 429)
             )
 
+        def _is_transient_empty_error(exc: Exception) -> bool:
+            """Kraken intermittently answers public read endpoints (notably
+            Ticker) with ``EGeneral:No data`` during load or degradation,
+            even though the pair exists and recovers seconds to minutes
+            later. Treat it as transient: a longer, fixed backoff gives the
+            backend time to recover without hammering it."""
+            return "egeneral:no data" in str(exc).lower()
+
         for attempt in range(max_retries):
             url = f"{self.API_URL}{endpoint}"
             req_data = dict(data) if data else {}
@@ -130,6 +143,8 @@ class KrakenAPI:
                     raise
                 if _is_rate_limit_error(e):
                     wait = RATE_LIMIT_BACKOFF_SECONDS
+                elif _is_transient_empty_error(e):
+                    wait = EMPTY_RESULT_BACKOFF_SECONDS
                 else:
                     wait = 5 * (2**attempt)
                 print(f"API request failed (attempt {attempt + 1}/{max_retries}), retrying in {wait}s: {e}")
