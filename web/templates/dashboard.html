@@ -210,7 +210,7 @@
       }
       card.style.display = '';
       const v = latest.values || {};
-      const quote = v.base || '';
+      const quote = v.quote || v.base || '';
       const pair = v.trading_pair || '';
 
       // Header: pair badge, briefing date + recency, source badge.
@@ -254,7 +254,7 @@
           let s = `So far, ${v.purchase_count} ${Number(v.purchase_count) === 1 ? 'buy has' : 'buys have'} invested ${fmtQuote(v.total_spent, quote)}`;
           if (v.value_now != null) {
             s += `; the holdings are currently worth ${fmtQuote(v.value_now, quote)}`;
-            if (v.pnl_pct != null) s += ` (${Number(v.pnl_pct) >= 0 ? '+' : ''}${Number(v.pnl_pct).toFixed(1)}%)`;
+            if (v.pnl_pct != null) s += ` (${Number(v.pnl_pct) >= 0 ? '+' : ''}${formatPercent(v.pnl_pct, 1)}%)`;
           }
           parts.push(s + '.');
         } else {
@@ -326,7 +326,7 @@
         const sign = Number(v.pnl) >= 0 ? '+' : '−';
         const pctSign = Number(v.pnl_pct) >= 0 ? '+' : '−';
         rows.appendChild(briefingDetailRow('P/L',
-          `${sign}${fmtQuote(Math.abs(Number(v.pnl)), quote)} (${pctSign}${Math.abs(Number(v.pnl_pct)).toFixed(1)}%)`));
+          `${sign}${fmtQuote(Math.abs(Number(v.pnl)), quote)} (${pctSign}${formatPercent(Math.abs(Number(v.pnl_pct)), 1)}%)`));
       } else {
         rows.appendChild(briefingDetailRow('P/L', 'Not available'));
       }

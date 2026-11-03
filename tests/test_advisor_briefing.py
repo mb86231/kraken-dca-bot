@@ -505,7 +505,8 @@ def test_message_formats_times_human_readable(tmp_path: Path, morning: datetime)
     message = notifier.messages[0]
     assert "(Zurich)" in message
     assert "Monday, 15 June 2026" in message
-    assert "as of" in message
+    # First briefing after install: no baseline yet, so no change line.
+    assert "Change since last briefing" not in message
     # Raw ISO timestamps are gone from the operator-facing message.
     assert snapshot["generated_at"] not in message
     advisor.executor.shutdown(wait=True)
@@ -520,8 +521,38 @@ def test_message_computes_portfolio_pnl(tmp_path: Path, morning: datetime):
     assert service.check_and_send(now=morning).sent is True
 
     message = notifier.messages[0]
-    assert "Value now: 500" in message
-    assert "P/L: +20.00 (+4.2%)" in message
+    assert "Value now: 500.00 CHF" in message
+    assert "P/L: +20.00 CHF (+4.2%)" in message
+    advisor.executor.shutdown(wait=True)
+
+
+def test_display_values_derives_base_and_quote():
+    values = display_values({"trading_pair": "XBTEUR", "portfolio": {}})
+    assert values["base"] == "XBT"
+    assert values["quote"] == "EUR"
+    legacy = display_values({"trading_pair": "XXBTZEUR", "portfolio": {}})
+    assert legacy["base"] == "XBT"
+    assert legacy["quote"] == "EUR"
+
+
+def test_message_shows_price_change_since_last_briefing(
+    tmp_path: Path, morning: datetime
+):
+    advisor = _advisor(_handler_returning("calm"))
+    notifier = _FakeNotifier()
+    history_file = tmp_path / "briefing_history.json"
+    history_file.write_text(
+        json.dumps([{"slot": "2026-06-14", "values": {"last_price": 50000.0}}])
+    )
+    service = BriefingService(
+        advisor,
+        notifier,
+        lambda: _snapshot(price=55000.0),
+        state_file=tmp_path / "briefing_state.json",
+        history_file=history_file,
+    )
+    assert service.check_and_send(now=morning).sent is True
+    assert "Change since last briefing: +10.0 %" in notifier.messages[0]
     advisor.executor.shutdown(wait=True)
 
 

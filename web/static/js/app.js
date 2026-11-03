@@ -77,6 +77,11 @@ function formatCurrency(value, currency = '') {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + suffix;
 }
 
+function formatPercent(value, digits = 2) {
+  if (value === null || value === undefined || isNaN(Number(value))) return '—';
+  return Number(value).toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
 function formatCrypto(value) {
   if (value === null || value === undefined) return '—';
   return value.toFixed(8);
@@ -178,7 +183,7 @@ async function loadStatus() {
     const pl = document.getElementById('unrealized-pl');
     if (pl && data.portfolio) {
       pl.textContent = formatCurrency(data.portfolio.unrealized_pl, data.portfolio.quote_currency) +
-        ` (${data.portfolio.unrealized_pl_percent.toFixed(2)}%)`;
+        ` (${formatPercent(data.portfolio.unrealized_pl_percent)}%)`;
       pl.style.color = data.portfolio.unrealized_pl >= 0 ? 'var(--green)' : 'var(--red)';
     }
 

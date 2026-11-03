@@ -8,6 +8,32 @@ Releases are tagged `v*` and published as container images to
 `ghcr.io/mb86231/kraken-dca-bot:<tag>` (plus `:latest`). To update a running
 installation, see **Updates** in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
+## [1.5.3] — 2026-11-03
+
+### Fixed
+
+- **Telegram briefing correctness and formatting** (issue #24): the
+  holdings line labelled the crypto amount with the quote currency
+  (`Holdings: 0.001 EUR` for XBTEUR) because the pair's base asset was
+  derived with quote-currency logic. Base and quote are now derived
+  properly for both modern (XBTEUR) and legacy (XXBTZEUR) pair styles, and
+  the dashboard briefing panel prefers the new explicit `quote` field while
+  staying compatible with old history entries. Fiat values (price,
+  invested, value now, P/L, monthly budget) are rendered with two decimals
+  and their currency; the redundant `as of` line under the market price is
+  gone. The market block now shows the price change since the last
+  successful briefing, computed bot-side from the briefing history.
+- **Mobile dashboard overflow on narrow screens** (issue #23): on phone-width
+  viewports (≈390 px) the KPI cards were cut off on the right because plain
+  `1fr` grid tracks cannot shrink below their content width — all grid
+  classes now use `minmax(0, 1fr)`. Below 480 px the five dashboard KPI cards
+  stack in a single column with a smaller stat value size. Status badges
+  (`LIVE TRADING`, `Bot running`, …) no longer wrap and tear their border.
+  Percentages in KPI cards and the briefing panel now respect the browser
+  locale instead of a hard-coded dot (`toFixed`). The orders and preflight
+  tables are wrapped in `.table-wrap` like the other tables, so they scroll
+  horizontally instead of forcing the page wider than the screen.
+
 ## [1.5.2] — 2026-11-01
 
 ### Added

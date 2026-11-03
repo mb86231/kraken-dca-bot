@@ -155,9 +155,18 @@ def display_values(snapshot: dict[str, Any]) -> dict[str, Any]:
     if value_now is not None and total_spent:
         pnl = value_now - float(total_spent)
         pnl_pct = pnl / float(total_spent) * 100
+    pair = snapshot.get("trading_pair") or ""
+    if len(pair) == 8 and pair.startswith("X") and pair[4] == "Z":
+        # Legacy Kraken pair style: XXBTZEUR -> base XBT, quote EUR.
+        base, quote = pair[1:4], pair[5:8]
+    elif len(pair) > 3:
+        base, quote = pair[:-3], pair[-3:]
+    else:
+        base, quote = "", ""
     return {
-        "trading_pair": snapshot.get("trading_pair"),
-        "base": (snapshot.get("trading_pair") or "")[-3:].lstrip("Z") or "",
+        "trading_pair": pair or None,
+        "base": base,
+        "quote": quote,
         "last_price": last_price,
         "last_price_at": snapshot.get("last_price_at"),
         "next_cycle_at": snapshot.get("next_cycle_at"),
@@ -207,11 +216,40 @@ def format_local(value: Any, fmt: str = "%d %b, %H:%M") -> str:
     return parsed.astimezone(BRIEFING_TZ).strftime(fmt)
 
 
+def _price_change_pct(last: Any, prev: Any) -> float | None:
+    """Percentage change from the previous briefing's price to the current one."""
+    try:
+        last_f, prev_f = float(last), float(prev)
+    except (TypeError, ValueError):
+        return None
+    if prev_f <= 0:
+        return None
+    return (last_f - prev_f) / prev_f * 100
+
+
+def _last_price_from_history(history: list[dict[str, Any]]) -> float | None:
+    """Most recent price recorded in the briefing history; None when there
+    is no usable baseline yet (first briefing after install)."""
+    for entry in reversed(history):
+        price = (entry.get("values") or {}).get("last_price")
+        if price is not None:
+            try:
+                return float(price)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def _quote_suffix(values: dict[str, Any]) -> str:
+    quote = values.get("quote") or ""
+    return f" {quote}" if quote else ""
+
+
 def _pnl_text(values: dict[str, Any]) -> str:
     pnl, pct = values.get("pnl"), values.get("pnl_pct")
     if pnl is None or pct is None:
         return "n/a"
-    return f"{_signed(pnl, 2)} ({_signed(pct, 1)}%)"
+    return f"{_signed(pnl, 2)}{_quote_suffix(values)} ({_signed(pct, 1)}%)"
 
 
 def _headline_lines(headlines: list[Any], limit: int = 6) -> list[str]:
@@ -243,26 +281,29 @@ def build_briefing_message(
     if ai_text:
         blocks.append(ai_text.strip())
     if enabled.get("market"):
-        blocks.append(
-            f"💹 Market — {values.get('trading_pair') or 'n/a'}\n"
-            f"Price: {_fmt_amount(values.get('last_price'))}\n"
-            f"as of {format_local(values.get('last_price_at'))}"
-        )
+        lines = [
+            f"💹 Market — {values.get('trading_pair') or 'n/a'}",
+            f"Price: {_fmt_amount(values.get('last_price'), 2)}{_quote_suffix(values)}",
+        ]
+        change = values.get("price_change_pct")
+        if change is not None:
+            lines.append(f"Change since last briefing: {_signed(change, 1)} %")
+        blocks.append("\n".join(lines))
     if enabled.get("portfolio"):
         holdings = _fmt_amount(values.get("total_amount"))
         base = values.get("base") or ""
         blocks.append(
             "💼 Portfolio\n"
-            f"Invested: {_fmt_amount(values.get('total_spent'))}\n"
+            f"Invested: {_fmt_amount(values.get('total_spent'), 2)}{_quote_suffix(values)}\n"
             f"Holdings: {holdings} {base}".rstrip() + "\n"
-            f"Value now: {_fmt_amount(values.get('value_now'))}\n"
+            f"Value now: {_fmt_amount(values.get('value_now'), 2)}{_quote_suffix(values)}\n"
             f"P/L: {_pnl_text(values)}"
         )
     if enabled.get("budget"):
         blocks.append(
             "📅 Budget & Plan\n"
-            f"Monthly: {_fmt_amount(values.get('budget_spent'))}"
-            f" / {_fmt_amount(values.get('budget_limit'))}\n"
+            f"Monthly budget: {_fmt_amount(values.get('budget_spent'), 2)}{_quote_suffix(values)}"
+            f" / {_fmt_amount(values.get('budget_limit'), 2)}{_quote_suffix(values)}\n"
             f"Next cycle: {format_local(values.get('next_cycle_at'))}\n"
             f"Buys left (est.): {_fmt_amount(values.get('estimated_buys'))}"
         )
@@ -520,6 +561,9 @@ class BriefingService:
 
             snapshot = self.snapshot_fn()
             values = display_values(snapshot)
+            values["price_change_pct"] = _price_change_pct(
+                values.get("last_price"), _last_price_from_history(self.load_history())
+            )
             data_timestamp = snapshot.get("generated_at")
             general_news, pair_news = self._fetch_news(snapshot)
             narrative_news = list(general_news) + list(pair_news)
@@ -610,6 +654,9 @@ class BriefingService:
 
         snapshot = self.snapshot_fn()
         values = display_values(snapshot)
+        values["price_change_pct"] = _price_change_pct(
+            values.get("last_price"), _last_price_from_history(self.load_history())
+        )
         general_news, pair_news = self._fetch_news(snapshot)
         narrative_news = list(general_news) + list(pair_news)
 
