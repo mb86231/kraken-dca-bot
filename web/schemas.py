@@ -201,7 +201,7 @@ class WebAuthUpdate(BaseModel):
 
 
 class OIDCSettingsUpdate(BaseModel):
-    """Authentik (OIDC) settings persisted to the secrets store.
+    """SSO / OIDC provider settings persisted to the secrets store.
 
     Empty strings are treated as "leave unchanged"; use the clear endpoint
     to remove stored values entirely.
@@ -213,6 +213,7 @@ class OIDCSettingsUpdate(BaseModel):
     client_secret: Optional[str] = None
     redirect_uri: Optional[str] = None
     scopes: Optional[str] = None
+    provider_name: Optional[str] = Field(None, max_length=40)
 
 
 class DynamicTierResponse(BaseModel):

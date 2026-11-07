@@ -95,11 +95,13 @@ variables (they take precedence over the secrets store):
    ```
 5. Open `http://127.0.0.1:8000` and sign in.
 
-## OIDC / SSO Authentication (Authentik)
+## OIDC / SSO Authentication
 
-The dashboard supports OpenID Connect via the standard authorization-code flow with PKCE. When configured, the login page shows a "Sign in with Authentik" button. Local password login remains available as a fallback.
+The dashboard supports OpenID Connect via the standard authorization-code flow with PKCE, provider-neutral: Authentik, Pocket ID, Keycloak and any other discovery-compliant provider work. When configured, the login page shows a "Sign in with …" button (label configurable via `OIDC_PROVIDER_NAME` / Settings → Authentication, default "SSO"). Local password login remains available as a fallback.
 
-### Authentik application setup
+The issuer URL may be entered with or without a trailing slash. The bot fetches `<issuer>/.well-known/openid-configuration` and validates ID tokens against the `issuer` value from that discovery document (per OIDC Discovery §4.3), so providers whose issuer has no trailing slash (Pocket ID, Keycloak, Google) work out of the box. A configured issuer that does not match the discovery issuer (beyond the trailing slash) is rejected as a misconfiguration.
+
+### Example: Authentik
 
 In your Authentik admin panel:
 
@@ -114,10 +116,9 @@ In your Authentik admin panel:
 3. Assign users/groups that should access the dashboard.
 4. Copy the issuer URL (e.g. `https://authentik.example.com/application/o/dca-bot-staging/`).
 
-### Environment variables
-
 ```env
 OIDC_ENABLED=true
+OIDC_PROVIDER_NAME=Authentik
 OIDC_ISSUER_URL=https://authentik.example.com/application/o/dca-bot-staging/
 OIDC_CLIENT_ID=dca-bot-staging
 OIDC_CLIENT_SECRET=<secret-from-authentik>
@@ -125,6 +126,28 @@ OIDC_REDIRECT_URI=https://staging-bot.example.com/auth/callback
 OIDC_SCOPES=openid email profile
 OIDC_ALLOWED_SUBJECTS=alice,bob@example.com
 ```
+
+### Example: Pocket ID
+
+Pocket ID is a passkey-only OIDC provider whose issuer has **no** trailing slash — supported since v1.5.4.
+
+1. In the Pocket ID admin panel go to **OIDC Clients → Add**:
+   - Name: `DCA Bot`
+   - Callback URL: `https://<bot-host>/auth/callback`
+   - PKCE: enabled
+   - Client type: confidential (not public); note the client secret
+2. In the bot (environment variables or Settings → Authentication):
+
+```env
+OIDC_ENABLED=true
+OIDC_PROVIDER_NAME=Pocket ID
+OIDC_ISSUER_URL=https://<pocket-id-host>
+OIDC_CLIENT_ID=<from-pocket-id>
+OIDC_CLIENT_SECRET=<from-pocket-id>
+OIDC_ALLOWED_SUBJECTS=<pocket-id-username-or-email>
+```
+
+Note: Pocket ID only accepts HTTPS callback URLs by default (`ALLOW_INSECURE_CALLBACK_URLS=false`), so the dashboard must be served via HTTPS (e.g. behind a reverse proxy) — plain `http://<ip>:8000` will not work as a callback URL.
 
 `OIDC_REDIRECT_URI` can be omitted; the dashboard will infer it from the incoming `Host`/`X-Forwarded-*` headers as `/auth/callback`.
 

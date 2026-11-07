@@ -22,7 +22,7 @@ All CI/CD values are configured in the repository under:
 | `TELEGRAM_CHAT_ID` | Telegram chat ID (optional — can be set in the dashboard instead) |
 | `WEB_UI_PASSWORD_HASH` | Bcrypt hash of the dashboard admin password (optional — dashboard secrets store) |
 | `SESSION_SECRET` | Strong random value for signing session cookies (optional — dashboard secrets store) |
-| `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | Authentik OIDC client (optional — dashboard secrets store) |
+| `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | SSO / OIDC provider client (Authentik, Pocket ID, …; optional — dashboard secrets store) |
 | `REGISTRY_USERNAME` | Gitea container registry username |
 | `REGISTRY_PASSWORD` | Gitea container registry password or token |
 | `SSH_PRIVATE_KEY` | SSH private key for the `deploy` user on the production host |
@@ -78,7 +78,7 @@ shows a masked status card for each area and tells you which source is active
 | Telegram | Settings → Telegram Notifications | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` |
 | Web password hash | secrets store / env | `WEB_UI_PASSWORD_HASH` |
 | Session secret | secrets store / env | `SESSION_SECRET` |
-| OIDC (Authentik) | secrets store / env | `OIDC_*` |
+| OIDC (SSO) | secrets store / env | `OIDC_*` |
 
 ---
 

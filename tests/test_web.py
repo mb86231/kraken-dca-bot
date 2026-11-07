@@ -464,7 +464,7 @@ def test_settings_page_renders_subsections(auth_client):
     assert "API Keys" in response.text
     assert "Authentication" in response.text
     assert "Local Admin" in response.text
-    assert "Authentik (OIDC)" in response.text
+    assert "SSO / OIDC" in response.text
     assert "web_auth_username" in response.text
     assert "oidc_issuer_url" in response.text
 

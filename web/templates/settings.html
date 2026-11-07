@@ -473,17 +473,22 @@
 </div>
 
 <div class="card" style="margin-top: 1rem;">
-  <h2>Authentik (OIDC)</h2>
-  <p class="muted">Sign in via your Authentik SSO. Settings are stored in the secrets store (<code>data/secrets.json</code>, 0600) and take effect immediately unless the <code>OIDC_*</code> environment variables are set, which take precedence. Local login remains available as a fallback either way.</p>
+  <h2>SSO / OIDC</h2>
+  <p class="muted">Sign in via any OpenID Connect provider (e.g. Authentik, Pocket ID, Keycloak). Settings are stored in the secrets store (<code>data/secrets.json</code>, 0600) and take effect immediately unless the <code>OIDC_*</code> environment variables are set, which take precedence. Local login remains available as a fallback either way.</p>
   <form id="oidc-form" class="grid grid-2" onsubmit="return false;">
     <div class="form-group">
-      <label class="check" for="oidc_enabled"><input type="checkbox" id="oidc_enabled" name="oidc_enabled"> <strong>Enable Authentik Login</strong></label>
-      <div class="form-hint">Shows the „Sign in with Authentik“ option on the login page.</div>
+      <label class="check" for="oidc_enabled"><input type="checkbox" id="oidc_enabled" name="oidc_enabled"> <strong>Enable SSO Login</strong></label>
+      <div class="form-hint">Shows the single sign-on option on the login page.</div>
+    </div>
+    <div class="form-group">
+      <label for="oidc_provider_name">Provider Display Name</label>
+      <input type="text" id="oidc_provider_name" name="oidc_provider_name" placeholder="SSO" maxlength="40">
+      <div class="form-hint">Shown on the login button, e.g. &quot;Sign in with Pocket ID&quot;. Defaults to &quot;SSO&quot;.</div>
     </div>
     <div class="form-group">
       <label for="oidc_issuer_url">Issuer URL</label>
       <input type="text" id="oidc_issuer_url" name="oidc_issuer_url" placeholder="https://auth.example.com/application/o/my-app/">
-      <div class="form-hint">The application issuer URL from Authentik, ending in a slash.</div>
+      <div class="form-hint">The provider's issuer URL, with or without trailing slash — it must match the discovery document's issuer.</div>
     </div>
     <div class="form-group">
       <label for="oidc_client_id">Client ID</label>
@@ -505,7 +510,7 @@
     </div>
   </form>
   <div class="button-row" style="margin-top: 1rem;">
-    <button class="btn btn-primary" id="save-oidc">Save Authentik Settings</button>
+    <button class="btn btn-primary" id="save-oidc">Save SSO Settings</button>
     <button class="btn btn-danger" id="clear-oidc">Remove Stored Settings</button>
   </div>
   <div id="oidc-status" class="alert" style="display:none; margin-top: 1rem;"></div>
@@ -513,7 +518,7 @@
 
 <div class="card" style="margin-top: 1rem;">
   <h2>Authentication Status</h2>
-  <p class="muted">Both sign-in methods are always available: local username/password and Authentik (OIDC). Values are shown masked.</p>
+  <p class="muted">Both sign-in methods are always available: local username/password and SSO (OIDC). Values are shown masked.</p>
   <div id="auth-status" class="muted">Loading…</div>
 </div>
 
@@ -1004,13 +1009,14 @@
       addInfo('Password:', data.local.password_hash.set ? 'set (' + src(data.local.password_hash) + ')' : 'not set');
       addInfo('Session secret:', data.local.session_secret.set ? 'set (' + src(data.local.session_secret) + ')' : 'not set');
       const oidcDiv = document.createElement('div');
-      oidcDiv.appendChild(el('strong', null, 'Authentik (OIDC):'));
+      oidcDiv.appendChild(el('strong', null, 'SSO / OIDC:'));
       oidcDiv.appendChild(document.createTextNode(' '));
       oidcDiv.appendChild(el('span', `badge ${data.oidc_enabled ? 'ok' : 'warn'}`, data.oidc_enabled ? 'On' : 'Off'));
       if (data.oidc.fields.issuer_url.value) {
         oidcDiv.appendChild(document.createTextNode(' — ' + data.oidc.fields.issuer_url.value));
       }
       grid.appendChild(oidcDiv);
+      addInfo('OIDC provider name:', data.oidc.fields.provider_name.value || 'SSO');
       addInfo('OIDC client:', data.oidc.fields.client_id.set ? data.oidc.fields.client_id.value + ' (' + src(data.oidc.fields.client_id) + ')' : 'not set');
       addInfo('OIDC client secret:', data.oidc.fields.client_secret.set ? 'set (' + src(data.oidc.fields.client_secret) + ')' : 'not set');
       statusEl.appendChild(grid);
@@ -1018,6 +1024,7 @@
       // Prefill the forms with the effective (non-secret) values.
       document.getElementById('web_auth_username').value = data.local.username || '';
       document.getElementById('oidc_enabled').checked = data.oidc_enabled === true;
+      document.getElementById('oidc_provider_name').value = data.oidc.fields.provider_name.value || '';
       document.getElementById('oidc_issuer_url').value = data.oidc.fields.issuer_url.value || '';
       document.getElementById('oidc_client_id').value = data.oidc.fields.client_id.value || '';
       document.getElementById('oidc_redirect_uri').value = data.oidc.fields.redirect_uri.value || '';
@@ -1084,9 +1091,9 @@
 
   document.getElementById('save-oidc').addEventListener('click', async () => {
     const enabled = document.getElementById('oidc_enabled').checked;
-    if (enabled && !(await uiConfirm('Enable Authentik login? Make sure the issuer URL and client ID are correct.', { title: 'Enable Authentik login', danger: false }))) return;
+    if (enabled && !(await uiConfirm('Enable SSO login? Make sure the issuer URL and client ID are correct.', { title: 'Enable SSO login', danger: false }))) return;
     const payload = { enabled: enabled };
-    for (const id of ['oidc_issuer_url', 'oidc_client_id', 'oidc_client_secret', 'oidc_redirect_uri', 'oidc_scopes']) {
+    for (const id of ['oidc_provider_name', 'oidc_issuer_url', 'oidc_client_id', 'oidc_client_secret', 'oidc_redirect_uri', 'oidc_scopes']) {
       const value = document.getElementById(id).value.trim();
       if (value) payload[id.replace(/^oidc_/, '')] = value;
     }
@@ -1094,7 +1101,7 @@
       const data = await apiPut('/api/settings/oidc', payload);
       showToast(data.message, 'success');
       document.getElementById('oidc_client_secret').value = '';
-      renderSectionStatus('oidc-status', data.oidc, 'Authentik (OIDC)');
+      renderSectionStatus('oidc-status', data.oidc, 'SSO / OIDC');
       await loadAuthStatus();
     } catch (err) {
       showToast(err.message, 'error');
@@ -1102,11 +1109,11 @@
   });
 
   document.getElementById('clear-oidc').addEventListener('click', async () => {
-    if (!(await uiConfirm('Remove the stored Authentik settings from the secrets store? Environment variables are not affected.', { title: 'Remove Authentik settings', confirmText: 'Remove' }))) return;
+    if (!(await uiConfirm('Remove the stored SSO settings from the secrets store? Environment variables are not affected.', { title: 'Remove SSO settings', confirmText: 'Remove' }))) return;
     try {
       const data = await apiPost('/api/settings/oidc/clear');
       showToast(data.message, 'success');
-      renderSectionStatus('oidc-status', data.oidc, 'Authentik (OIDC)');
+      renderSectionStatus('oidc-status', data.oidc, 'SSO / OIDC');
       await loadAuthStatus();
     } catch (err) {
       showToast(err.message, 'error');

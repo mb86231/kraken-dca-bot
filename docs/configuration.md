@@ -273,7 +273,8 @@ Copy `.env.example` to `.env` and fill in real values. `.env` is in
 | `WEB_UI_SECURE_COOKIE` | `true` / `false` | Set `Secure` flag on cookies (use only with HTTPS). |
 | `SESSION_TTL_HOURS` | `24` | Session lifetime in hours; logout and credential changes revoke sessions immediately. |
 | `OIDC_ENABLED` | `false` / `true` | Show the "Sign in with SSO" button on the login page. |
-| `OIDC_ISSUER_URL` | `https://authentik.example.com/application/o/dca-bot/` | OIDC issuer URL. |
+| `OIDC_PROVIDER_NAME` | `SSO` | Display name for the SSO provider (login button label). |
+| `OIDC_ISSUER_URL` | `https://authentik.example.com/application/o/dca-bot/` | OIDC issuer URL, with or without trailing slash; ID tokens are validated against the issuer from the discovery document. |
 | `OIDC_REDIRECT_URI` | `https://bot.example.com/auth/callback` | OIDC redirect URI (must match the SSO provider). |
 | `OIDC_SCOPES` | `openid email profile` | OIDC scopes requested at login. |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`. |

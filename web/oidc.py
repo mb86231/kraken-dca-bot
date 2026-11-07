@@ -1,6 +1,6 @@
 """OpenID Connect (OIDC) support for the web dashboard.
 
-This module implements the authorization-code flow with PKCE for Authentik
+This module implements the authorization-code flow with PKCE for any
 and any other OIDC-compliant provider. It relies on the provider's discovery
 document and JWKS endpoint to validate ID tokens locally.
 """
@@ -74,6 +74,11 @@ class OIDCProvider:
     def scopes(self) -> str:
         return self._setting("scopes").strip() or "openid email profile"
 
+    @property
+    def provider_name(self) -> str:
+        """Display name for the SSO provider (login button, settings)."""
+        return self._setting("provider_name").strip() or "SSO"
+
     def _discovery_url(self) -> str:
         return urljoin(self.issuer_url, ".well-known/openid-configuration")
 
@@ -100,13 +105,43 @@ class OIDCProvider:
         if self._discovery is None or self._discovered_at is None:
             self._discovery = await self._fetch_json(self._discovery_url())
             self._discovered_at = datetime.now(timezone.utc)
+            self._validate_discovery_issuer()
             return self._discovery
 
         # Refresh discovery document every hour to pick up key rotations.
         if datetime.now(timezone.utc) - self._discovered_at > timedelta(hours=1):
             self._discovery = await self._fetch_json(self._discovery_url())
             self._discovered_at = datetime.now(timezone.utc)
+            self._validate_discovery_issuer()
         return self._discovery
+
+    def _validate_discovery_issuer(self) -> None:
+        """The discovery document's issuer is authoritative for ID token
+        validation (OIDC Discovery 1.0 §4.3). Refuse a provider whose
+        issuer does not match the configured URL — trailing slash excepted,
+        because providers differ on that: Authentik issuers end in '/',
+        Pocket ID, Keycloak and Google do not."""
+        discovered = str((self._discovery or {}).get("issuer") or "").strip()
+        if not discovered:
+            return
+        if discovered.rstrip("/") != self.issuer_url.rstrip("/"):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "OIDC issuer mismatch: the discovery document names "
+                    f"'{discovered}', but the configured issuer URL is "
+                    f"'{self.issuer_url}'"
+                ),
+            )
+
+    @property
+    def token_issuer(self) -> str:
+        """Issuer claim expected in ID tokens: the discovery document's
+        issuer value, which must equal the token's iss exactly (no
+        trailing-slash normalization on this comparison). Falls back to
+        the configured issuer URL when the provider omits the field."""
+        discovered = str((self._discovery or {}).get("issuer") or "").strip()
+        return discovered or self.issuer_url
 
     async def _get_jwks(self) -> Dict[str, Any]:
         if self._jwks is not None:
@@ -288,7 +323,7 @@ class OIDCProvider:
                 token,
                 key,
                 algorithms=self.SUPPORTED_ALGORITHMS,
-                issuer=self.issuer_url,
+                issuer=self.token_issuer,
                 audience=self.client_id,
                 options=cast(
                     Any,

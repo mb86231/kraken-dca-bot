@@ -8,6 +8,29 @@ Releases are tagged `v*` and published as container images to
 `ghcr.io/mb86231/kraken-dca-bot:<tag>` (plus `:latest`). To update a running
 installation, see **Updates** in [`docs/INSTALLATION.md`](docs/INSTALLATION.md).
 
+## [1.5.4] — 2026-11-07
+
+### Added
+
+- **SSO provider display name** (issue #26): new optional `provider_name`
+  setting (environment variable `OIDC_PROVIDER_NAME` or Settings →
+  Authentication) that labels the login button, e.g. "Sign in with
+  Pocket ID". Defaults to "SSO". The OIDC UI and documentation are now
+  provider-neutral ("SSO / OIDC" instead of "Authentik"); a Pocket ID
+  setup example was added to `docs/WEB_DASHBOARD.md`.
+
+### Fixed
+
+- **OIDC login failed with providers whose issuer has no trailing slash**
+  (issue #26): the configured issuer URL was always forced to end in `/`
+  and the ID token's `iss` claim was validated against that normalized
+  value. Pocket ID, Keycloak and Google issue tokens without a trailing
+  slash, so login failed with an issuer mismatch. ID tokens are now
+  validated against the `issuer` value from the provider's discovery
+  document (authoritative per OIDC Discovery §4.3); the configured URL
+  only needs to match it modulo the trailing slash, and a real mismatch
+  is rejected with a clear error.
+
 ## [1.5.3] — 2026-11-03
 
 ### Fixed

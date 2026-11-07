@@ -44,7 +44,7 @@
     </form>
     {% else %}
     {% if oidc_enabled %}
-    <a href="/login/oidc" class="btn btn-oidc btn-block">Sign in with Authentik</a>
+    <a href="/login/oidc" class="btn btn-oidc btn-block">Sign in with {{ oidc_provider_name or 'SSO' }}</a>
     <div class="login-divider"><span>or use local account</span></div>
     {% endif %}
     <form action="/login" method="post" class="login-form">

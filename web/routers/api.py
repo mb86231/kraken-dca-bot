@@ -1475,7 +1475,7 @@ async def api_update_oidc(
     username: str = Depends(require_auth),
     _rate_limit=Depends(settings_rate_limit),
 ):
-    """Persist Authentik (OIDC) settings to the secrets store.
+    """Persist SSO / OIDC provider settings to the secrets store.
 
     Empty strings are treated as "leave unchanged". Enabling OIDC requires an
     issuer URL and a client ID in the resulting effective configuration.
@@ -1500,7 +1500,7 @@ async def api_update_oidc(
             )
 
     values: dict[str, str] = {}
-    for field in ("issuer_url", "client_id", "client_secret", "redirect_uri", "scopes"):
+    for field in ("issuer_url", "client_id", "client_secret", "redirect_uri", "scopes", "provider_name"):
         value = update_dict.get(field)
         if value is not None and str(value).strip():
             values[field] = str(value).strip()

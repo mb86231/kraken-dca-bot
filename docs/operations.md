@@ -817,7 +817,7 @@ Both instances can optionally use OIDC/SSO via Authentik. The bot-side code and 
 
 A separate staging instance is defined in `compose.staging.yaml` and `.gitea/workflows/deploy-staging.yml`. It is hardcoded to `APP_ENV=staging` and `TRADING_MODE=demo`, so it never places real orders regardless of other settings.
 
-When `STAGING_OIDC_ENABLED=true` is set as a Gitea variable, the staging pipeline injects the OIDC secrets into `<STAGING_DEPLOYMENT_PATH>/config/.env` and the login page shows a "Sign in with Authentik" button. Local password login remains available as a fallback. See `docs/WEB_DASHBOARD.md` for the Authentik provider setup.
+When `STAGING_OIDC_ENABLED=true` is set as a Gitea variable, the staging pipeline injects the OIDC secrets into `<STAGING_DEPLOYMENT_PATH>/config/.env` and the login page shows a "Sign in with SSO" button (label configurable via `OIDC_PROVIDER_NAME`). Local password login remains available as a fallback. See `docs/WEB_DASHBOARD.md` for the provider setup (Authentik, Pocket ID, …).
 
 ### Production
 

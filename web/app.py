@@ -171,7 +171,7 @@ def login_page(request: Request):
     # login/logout and after setup.
     csrf_token = request.cookies.get(auth_manager.CSRF_COOKIE) or auth_manager.generate_csrf_token()
     response = templates.TemplateResponse(
-        request, "login.html", {"request": request, "error": None, "oidc_enabled": auth_manager.oidc_enabled, "setup_required": first_run_setup.required(), "csrf_token": csrf_token}
+        request, "login.html", {"request": request, "error": None, "oidc_enabled": auth_manager.oidc_enabled, "oidc_provider_name": oidc_provider.provider_name, "setup_required": first_run_setup.required(), "csrf_token": csrf_token}
     )
     auth_manager.set_csrf_cookie(response, csrf_token)
     return response
@@ -206,7 +206,7 @@ async def oidc_callback(
     if error:
         detail = request.query_params.get("error_description", error)
         return templates.TemplateResponse(
-            request, "login.html", {"request": request, "error": detail, "oidc_enabled": auth_manager.oidc_enabled, "setup_required": first_run_setup.required()}, status_code=400
+            request, "login.html", {"request": request, "error": detail, "oidc_enabled": auth_manager.oidc_enabled, "oidc_provider_name": oidc_provider.provider_name, "setup_required": first_run_setup.required()}, status_code=400
         )
 
     state = request.query_params.get("state")
@@ -269,7 +269,7 @@ async def login_submit(
         return templates.TemplateResponse(
             request,
             "login.html",
-            {"request": request, "error": "Invalid or missing CSRF token", "oidc_enabled": auth_manager.oidc_enabled, "setup_required": first_run_setup.required()},
+            {"request": request, "error": "Invalid or missing CSRF token", "oidc_enabled": auth_manager.oidc_enabled, "oidc_provider_name": oidc_provider.provider_name, "setup_required": first_run_setup.required()},
             status_code=403,
         )
 
@@ -283,7 +283,7 @@ async def login_submit(
     return templates.TemplateResponse(
         request,
         "login.html",
-        {"request": request, "error": "Invalid username or password", "oidc_enabled": auth_manager.oidc_enabled, "setup_required": first_run_setup.required()},
+        {"request": request, "error": "Invalid username or password", "oidc_enabled": auth_manager.oidc_enabled, "oidc_provider_name": oidc_provider.provider_name, "setup_required": first_run_setup.required()},
         status_code=401,
     )
 
@@ -315,7 +315,7 @@ async def setup_submit(
             {
                 "request": request,
                 "error": message,
-                "oidc_enabled": auth_manager.oidc_enabled,
+                "oidc_enabled": auth_manager.oidc_enabled, "oidc_provider_name": oidc_provider.provider_name,
                 "setup_required": True,
                 "setup_username": username,
             },

@@ -211,13 +211,21 @@ def mock_oidc_provider():
 def test_oidc_login_page_shows_button_when_enabled(oidc_client: TestClient):
     response = oidc_client.get("/login")
     assert response.status_code == 200
-    assert "Sign in with Authentik" in response.text
+    assert "Sign in with SSO" in response.text
+    assert "Sign in with Authentik" not in response.text
+
+
+def test_oidc_login_page_button_uses_provider_name(oidc_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("OIDC_PROVIDER_NAME", "Pocket ID")
+    response = oidc_client.get("/login")
+    assert response.status_code == 200
+    assert "Sign in with Pocket ID" in response.text
 
 
 def test_oidc_login_page_no_button_when_disabled(disabled_client: TestClient):
     response = disabled_client.get("/login")
     assert response.status_code == 200
-    assert "Sign in with Authentik" not in response.text
+    assert "Sign in with SSO" not in response.text
 
 
 def test_oidc_login_disabled_returns_404(disabled_client: TestClient):
@@ -265,6 +273,104 @@ def test_oidc_callback_validates_token_and_creates_session(oidc_client: TestClie
     assert callback.headers["location"] == "/dashboard"
     assert "dca_session" in callback.cookies
     assert "dca_csrf" in callback.cookies
+
+
+def _issuer_flow(
+    oidc_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    configured: str,
+    discovered: str,
+    token_iss: str,
+) -> httpx.Response:
+    """Run the full OIDC flow against a provider whose issuer differs from
+    the configured URL. Returns the /auth/callback (or /login/oidc) response."""
+    monkeypatch.setenv("OIDC_ISSUER_URL", configured)
+    oidc_provider._discovery = None  # type: ignore[assignment]
+    oidc_provider._jwks = None  # type: ignore[assignment]
+    oidc_provider._discovered_at = None  # type: ignore[assignment]
+    private_key, jwk = _generate_rsa_key_and_jwk()
+    base = discovered.rstrip("/")
+    discovery = {
+        "issuer": discovered,
+        "authorization_endpoint": f"{base}/authorize",
+        "token_endpoint": f"{base}/token",
+        "jwks_uri": f"{base}/jwks",
+    }
+
+    def _token_response(_url: str, _kwargs: Dict[str, Any]) -> MockResponse:
+        claims = {
+            "iss": token_iss,
+            "aud": CLIENT_ID,
+            "sub": "user-123",
+            "email": "user@example.com",
+            "preferred_username": "testuser",
+            "nonce": "test-nonce",
+            "iat": int(datetime.now(timezone.utc).timestamp()),
+            "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
+        }
+        return MockResponse(json_data={"id_token": _sign_id_token(private_key, claims)})
+
+    responses = {
+        discovery["jwks_uri"]: MockResponse(json_data={"keys": [jwk]}),
+        f"{configured.rstrip('/')}/.well-known/openid-configuration": MockResponse(json_data=discovery),
+        discovery["token_endpoint"]: _token_response,
+    }
+    with patch.object(oidc_provider, "_generate_nonce", return_value="test-nonce"), _mock_httpx(responses):
+        start = oidc_client.get("/login/oidc", follow_redirects=False)
+    if start.status_code != 307:
+        return start
+
+    from urllib.parse import parse_qs, urlparse
+
+    state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
+    with _mock_httpx(responses):
+        return oidc_client.get(
+            "/auth/callback",
+            params={"code": "test-code", "state": state},
+            follow_redirects=False,
+        )
+
+
+def test_oidc_issuer_without_trailing_slash_accepted(oidc_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    """Pocket ID / Keycloak style: discovery issuer and token iss carry no
+    trailing slash; the configured URL must not be slash-forced for the
+    iss validation (issue #26)."""
+    response = _issuer_flow(
+        oidc_client,
+        monkeypatch,
+        configured="https://id.example.com",
+        discovered="https://id.example.com",
+        token_iss="https://id.example.com",
+    )
+    assert response.status_code == 303
+
+
+def test_oidc_discovered_trailing_slash_is_authoritative(oidc_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    """Configured without slash, Authentik-style provider with one: the
+    discovery document's issuer is authoritative for iss validation."""
+    response = _issuer_flow(
+        oidc_client,
+        monkeypatch,
+        configured="https://auth.example.com/application/o/app",
+        discovered="https://auth.example.com/application/o/app/",
+        token_iss="https://auth.example.com/application/o/app/",
+    )
+    assert response.status_code == 303
+
+
+def test_oidc_issuer_mismatch_rejected(oidc_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    """A discovery issuer that differs beyond the trailing slash means
+    misconfiguration and must fail closed."""
+    response = _issuer_flow(
+        oidc_client,
+        monkeypatch,
+        configured="https://id.example.com",
+        discovered="https://evil.example.net",
+        token_iss="https://evil.example.net",
+    )
+    assert response.status_code == 503
+    assert "issuer mismatch" in response.text.lower()
 
 
 def test_oidc_callback_bad_state_is_rejected(oidc_client: TestClient, mock_oidc_provider):

@@ -44,6 +44,7 @@ SECTION_ENV_VARS: Dict[str, Dict[str, str]] = {
         "redirect_uri": "OIDC_REDIRECT_URI",
         "scopes": "OIDC_SCOPES",
         "allowed_subjects": "OIDC_ALLOWED_SUBJECTS",
+        "provider_name": "OIDC_PROVIDER_NAME",
     },
     "advisor": {
         "api_key": "AI_ADVISOR_API_KEY",
@@ -69,6 +70,7 @@ SECTION_STORE_KEYS: Dict[str, Dict[str, str]] = {
         "redirect_uri": "oidc_redirect_uri",
         "scopes": "oidc_scopes",
         "allowed_subjects": "oidc_allowed_subjects",
+        "provider_name": "oidc_provider_name",
     },
     "advisor": {
         "api_key": "ai_advisor_api_key",
@@ -86,6 +88,7 @@ _UNMASKED_FIELDS = {
     "chat_id",
     "allowed_subjects",
     "allowed_user_ids",
+    "provider_name",
 }
 
 
